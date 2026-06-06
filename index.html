@@ -4,77 +4,111 @@
   <meta charset="utf-8">
   <base target="_top">
   <style>
-    :root{ --accent:#4f46e5; --accent2:#4338ca; --bg:#f5f6fa; --card:#fff; --line:#e5e7eb; --ink:#111827; --muted:#6b7280; --ok:#059669; --bad:#dc2626; }
+    /* ===== Tema BCA: biru korporat + aksen emas ===== */
+    :root{
+      --accent:#0066AE; --accent2:#005299; --accent3:#003e73;
+      --gold:#F2A900; --gold2:#d99400;
+      --bg:#eef1f6; --card:#fff; --line:#e2e8f0; --ink:#0f172a; --muted:#64748b;
+      --ok:#0a8f4d; --bad:#dc2626;
+      --shadow:0 2px 8px rgba(15,23,42,.06); --shadow2:0 8px 24px rgba(0,102,174,.18);
+    }
     *{ box-sizing:border-box; }
     html{ height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
     body{ margin:0; min-height:100%; min-height:100dvh; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); font-size:15px; overflow-x:hidden; -webkit-tap-highlight-color:transparent; overscroll-behavior-y:contain; }
-    .wrap{ max-width:760px; margin:0 auto; padding:calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
-    h1{ font-size:18px; margin:6px 2px 2px; }
-    .sub{ color:var(--muted); font-size:12px; margin:0 2px 12px; }
-    .tabs{ display:flex; gap:6px; background:var(--card); padding:6px; border-radius:12px; position:sticky; top:0; z-index:5; box-shadow:0 1px 3px rgba(0,0,0,.06); }
-    .tab{ flex:1; text-align:center; padding:10px 6px; border-radius:9px; cursor:pointer; font-weight:600; color:var(--muted); font-size:13px; user-select:none; }
-    .tab.active{ background:var(--accent); color:#fff; }
+
+    /* App header ala mobile banking */
+    .appbar{ background:linear-gradient(135deg,var(--accent) 0%,var(--accent3) 100%); color:#fff; padding:calc(16px + env(safe-area-inset-top)) 18px 58px; position:relative; overflow:hidden; }
+    .appbar::after{ content:''; position:absolute; right:-50px; top:-40px; width:180px; height:180px; background:radial-gradient(circle,rgba(242,169,0,.25),transparent 70%); }
+    .appbar .brand{ display:flex; align-items:center; gap:10px; }
+    .appbar .logo{ width:38px; height:38px; border-radius:10px; background:var(--gold); color:var(--accent3); display:flex; align-items:center; justify-content:center; font-weight:800; font-size:18px; box-shadow:0 2px 8px rgba(0,0,0,.2); }
+    .appbar h1{ font-size:18px; margin:0; font-weight:700; letter-spacing:.2px; }
+    .appbar .sub{ color:rgba(255,255,255,.8); font-size:11.5px; margin:3px 0 0; }
+    .appbar .greet{ position:relative; z-index:1; margin-top:14px; font-size:13px; color:rgba(255,255,255,.9); display:flex; align-items:center; gap:7px; }
+
+    .wrap{ max-width:760px; margin:0 auto; padding:0 calc(14px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); margin-top:-42px; position:relative; z-index:2; }
+
+    .tabs{ display:flex; gap:5px; background:var(--card); padding:6px; border-radius:14px; position:sticky; top:8px; z-index:5; box-shadow:var(--shadow2); }
+    .tab{ flex:1; text-align:center; padding:11px 5px; border-radius:10px; cursor:pointer; font-weight:600; color:var(--muted); font-size:12.5px; user-select:none; transition:.18s; }
+    .tab.active{ background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; box-shadow:0 3px 8px rgba(0,102,174,.3); }
     .panel{ display:none; margin-top:14px; }
-    .panel.active{ display:block; }
-    .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
-    .clockbar{ display:flex; align-items:center; gap:8px; background:#eef2ff; color:var(--accent2); border-radius:10px; padding:8px 12px; font-weight:600; font-size:13px; margin-bottom:14px; }
-    label{ display:block; font-size:12px; font-weight:600; color:var(--muted); margin:12px 0 5px; }
-    input,select{ width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; font-size:16px; background:#fff; color:var(--ink); -webkit-appearance:none; appearance:none; }
-    input:focus,select:focus{ outline:none; border-color:var(--accent); }
-    select{ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 13px center; padding-right:34px; }
+    .panel.active{ display:block; animation:fade .25s ease; }
+    @keyframes fade{ from{ opacity:0; transform:translateY(6px); } to{ opacity:1; transform:none; } }
+
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:16px; padding:18px; margin-bottom:14px; box-shadow:var(--shadow); }
+    .clockbar{ display:flex; align-items:center; gap:8px; background:linear-gradient(135deg,#e8f1fb,#f0f7ff); color:var(--accent2); border-radius:11px; padding:9px 13px; font-weight:600; font-size:12.5px; margin-bottom:16px; border:1px solid #d6e6f7; }
+    label{ display:block; font-size:12px; font-weight:600; color:var(--muted); margin:13px 0 5px; }
+    input,select{ width:100%; padding:12px 13px; border:1.5px solid var(--line); border-radius:11px; font-size:16px; background:#fff; color:var(--ink); -webkit-appearance:none; appearance:none; transition:border-color .15s,box-shadow .15s; }
+    input:focus,select:focus{ outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(0,102,174,.12); }
+    select{ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%230066AE' stroke-width='2' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 13px center; padding-right:34px; }
     .row{ display:flex; gap:8px; }
     .row > *{ flex:1; }
     .selrow{ display:flex; gap:8px; align-items:stretch; }
     .selrow select{ flex:1; }
-    .plus{ width:44px; flex:none; border:1px solid var(--line); background:#fff; border-radius:10px; font-size:20px; color:var(--accent); cursor:pointer; }
+    .plus{ width:46px; flex:none; border:1.5px solid var(--accent); background:#fff; border-radius:11px; font-size:20px; color:var(--accent); cursor:pointer; font-weight:700; }
+    .plus:active{ background:var(--accent); color:#fff; }
     .addbox{ display:none; gap:8px; margin-top:8px; }
-    .ro{ background:#f9fafb; color:var(--ink); font-weight:600; }
-    .hint{ font-size:11px; color:var(--muted); margin-top:4px; }
-    button.primary{ width:100%; margin-top:18px; padding:13px; border:none; border-radius:11px; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
-    button.primary:active{ background:var(--accent2); }
-    button.sm{ padding:11px 14px; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+    .ro{ background:#f4f7fb; color:var(--ink); font-weight:700; }
+    .hint{ font-size:11px; color:var(--muted); margin-top:5px; }
+    button.primary{ width:100%; margin-top:20px; padding:14px; border:none; border-radius:12px; background:linear-gradient(135deg,var(--accent),var(--accent2)); color:#fff; font-size:15px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(0,102,174,.28); transition:.15s; }
+    button.primary:active{ transform:translateY(1px); box-shadow:0 2px 6px rgba(0,102,174,.3); }
+    button.sm{ padding:10px 14px; border:none; border-radius:10px; font-size:13.5px; font-weight:600; cursor:pointer; }
     button.green{ background:var(--ok); color:#fff; }
-    button.ghost{ background:#fff; border:1px solid var(--line); color:var(--ink); }
+    button.gold{ background:linear-gradient(135deg,var(--gold),var(--gold2)); color:#3d2c00; font-weight:700; }
+    button.ghost{ background:#fff; border:1.5px solid var(--line); color:var(--ink); }
     table{ width:100%; border-collapse:collapse; font-size:13px; }
-    th,td{ text-align:left; padding:8px 9px; border-bottom:1px solid var(--line); white-space:nowrap; }
-    th{ color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; }
-    .scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    th,td{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th{ color:var(--accent2); font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; background:#f6f9fc; }
+    tbody tr:active{ background:#f6f9fc; }
+    .scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; border-radius:10px; border:1px solid var(--line); }
     .r{ text-align:right; }
-    .empty{ color:var(--muted); font-size:13px; padding:14px 2px; }
-    .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#111827; color:#fff; padding:11px 16px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:50; max-width:90%; }
+    .empty{ color:var(--muted); font-size:13px; padding:16px 2px; text-align:center; }
+    .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:var(--accent3); color:#fff; padding:12px 18px; border-radius:12px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:50; max-width:90%; box-shadow:0 8px 24px rgba(0,0,0,.25); }
     .toast.show{ opacity:1; }
     .toast.bad{ background:var(--bad); }
-    .secthead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
-    .secthead h2{ font-size:15px; margin:0; }
-    .lapcard{ border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
-    .lapname{ font-size:16px; font-weight:700; margin-bottom:8px; }
-    .totals{ margin-top:10px; font-size:14px; }
-    .totals div{ display:flex; justify-content:space-between; padding:3px 0; }
-    .sisa{ font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:6px; }
+    .secthead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:8px; }
+    .secthead h2{ font-size:15px; margin:0; color:var(--accent3); display:flex; align-items:center; gap:7px; }
+    .secthead .actions{ display:flex; gap:6px; }
+    .lapcard{ border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:12px; box-shadow:var(--shadow); }
+    .lapname{ font-size:16px; font-weight:700; margin-bottom:10px; color:var(--accent3); }
+    .totals{ margin-top:12px; font-size:14px; }
+    .totals div{ display:flex; justify-content:space-between; padding:4px 0; }
+    .sisa{ font-weight:700; border-top:2px solid var(--line); margin-top:5px; padding-top:8px; }
     .sisa.merah{ color:var(--bad); }
-    .ciccard{ border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
-    .cicname{ font-size:16px; font-weight:700; margin-bottom:10px; }
-    .cicrow{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+    /* Kartu cicilan ala e-statement */
+    .ciccard{ border:1px solid var(--line); border-radius:14px; padding:0; margin-bottom:14px; overflow:hidden; box-shadow:var(--shadow); }
+    .cichead{ background:linear-gradient(135deg,var(--accent),var(--accent3)); color:#fff; padding:14px 16px; display:flex; justify-content:space-between; align-items:center; }
+    .cicname{ font-size:15px; font-weight:700; }
+    .cicakun{ font-size:11px; color:rgba(255,255,255,.85); background:rgba(255,255,255,.15); padding:3px 9px; border-radius:20px; }
+    .cicbody{ padding:6px 16px; }
+    .cicrow{ display:flex; justify-content:space-between; align-items:center; padding:11px 0; border-bottom:1px dashed var(--line); font-size:13px; }
     .cicrow:last-child{ border-bottom:none; }
     .cicrow .label{ color:var(--muted); }
-    .cicrow .val{ font-weight:600; }
-    .cictotal{ background:#eef2ff; border-radius:10px; padding:10px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; }
+    .cicrow .val{ font-weight:700; }
+    .cictotal{ background:#f6f9fc; padding:12px 16px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--line); }
     .cictotal .label{ font-size:13px; color:var(--accent2); font-weight:600; }
-    .cictotal .val{ font-size:16px; font-weight:700; color:var(--accent2); }
-    .cicrow.lunas .label, .cicrow.lunas .val{ text-decoration:line-through; color:var(--muted); }
-    .badge{ display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; margin-left:6px; vertical-align:middle; text-decoration:none; }
+    .cictotal .val{ font-size:16px; font-weight:800; color:var(--accent3); }
+    .cicrow.lunas .label, .cicrow.lunas .val{ text-decoration:line-through; color:#9aa7b8; }
+    .badge{ display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; margin-left:6px; vertical-align:middle; text-decoration:none; }
     .badge.ok{ background:#d1fae5; color:var(--ok); }
-    .cicsisa{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:13px; }
-    .cicsisa .label{ color:var(--muted); }
-    .cicsisa .val{ font-weight:700; color:var(--bad); }
+    .cicsisa{ display:flex; justify-content:space-between; align-items:center; padding:11px 16px; font-size:13px; background:#fff; }
+    .cicsisa .label{ color:var(--muted); font-weight:600; }
+    .cicsisa .val{ font-weight:800; color:var(--bad); }
     .cicsisa.lunas .val{ color:var(--ok); }
   </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>Kelola Pinjaman</h1>
-  <p class="sub">Catatan pinjaman atas nama Haryadi &middot; database Google Sheet</p>
+<div class="appbar">
+  <div class="brand">
+    <div class="logo">H</div>
+    <div>
+      <h1>Kelola Pinjaman</h1>
+      <p class="sub">atas nama Haryadi</p>
+    </div>
+  </div>
+  <div class="greet">🕒 <span class="jam">—</span></div>
+</div>
 
+<div class="wrap">
   <div class="tabs">
     <div class="tab active" data-tab="pinjaman">Pinjaman</div>
     <div class="tab" data-tab="pembayaran">Pembayaran</div>
@@ -140,7 +174,14 @@
     </div>
 
     <div class="card">
-      <div class="secthead"><h2>Daftar Pinjaman</h2><button class="sm ghost" id="reload_pinjaman">Muat ulang</button></div>
+      <div class="secthead">
+        <h2>📋 Daftar Pinjaman</h2>
+        <div class="actions">
+          <button class="sm gold" id="btn_generate">⚙ Generate Jadwal</button>
+          <button class="sm ghost" id="reload_pinjaman">Muat ulang</button>
+        </div>
+      </div>
+      <div class="hint" style="margin:-4px 0 12px">Tambah data lama: ketik di sheet <b>Pinjaman</b> (kolom ID boleh kosong), lalu klik <b>Generate Jadwal</b> — ID & jadwal cicilan dibuat otomatis.</div>
       <div class="scroll"><table id="tbl_pinjaman"><thead>
         <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Tempo Pertama</th><th>Tempo Akhir</th><th>TF ke</th></tr>
       </thead><tbody></tbody></table></div>
@@ -403,6 +444,17 @@
   }
 
   function loadPinjaman(){ return gs('getPinjaman').then(renderPinjaman); }
+
+  // Generate jadwal + isi ID otomatis untuk data lama yang diketik manual di sheet.
+  function generateJadwal(){
+    var btn = document.getElementById('btn_generate');
+    btn.disabled = true; btn.textContent = '⏳ Memproses...';
+    gs('generateJadwalDariSheet').then(function(res){
+      toast(res.pesan || 'Selesai.');
+      loadPinjaman();
+    }).catch(function(e){ toast('Gagal: '+(e.message||e), true); })
+      .then(function(){ btn.disabled = false; btn.textContent = '⚙ Generate Jadwal'; });
+  }
   function loadBayar(){ return gs('getPembayaran').then(renderBayar); }
 
   // ---- Submit ----
@@ -498,9 +550,9 @@
       var sisaHtml = '<div class="cicsisa'+(lunasSemua?' lunas':'')+'">'
         + '<span class="label">Sisa Belum Dibayar</span>'
         + '<span class="val">'+(lunasSemua?'✓ LUNAS':rp(g.sisa))+'</span></div>';
-      var html = '<div class="card ciccard">'
-        + '<div class="cicname">'+g.nama+' &middot; '+g.akun+'</div>'
-        + list
+      var html = '<div class="ciccard">'
+        + '<div class="cichead"><span class="cicname">'+g.nama+'</span><span class="cicakun">'+g.akun+'</span></div>'
+        + '<div class="cicbody">'+list+'</div>'
         + '<div class="cictotal"><span class="label">Total Pinjaman</span><span class="val">'+rp(g.total)+'</span></div>'
         + sisaHtml
         + '</div>';
@@ -572,6 +624,7 @@
     document.getElementById('b_loan').addEventListener('change', loadCicilanForBayar);
     document.getElementById('b_cicilan').addEventListener('change', onPilihCicilan);
     document.getElementById('reload_pinjaman').onclick = loadPinjaman;
+    document.getElementById('btn_generate').onclick = generateJadwal;
     document.getElementById('reload_bayar').onclick = loadBayar;
     document.getElementById('btn_tampil_cicilan').onclick = tampilCicilan;
     document.getElementById('btn_tampil_lap').onclick = tampilLaporan;

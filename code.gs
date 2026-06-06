@@ -142,23 +142,91 @@ function simpanPinjaman(p) {
   // Cicilan per bulan: pakai input manual; jika kosong, bagi rata.
   var perBulan = cicilan > 0 ? cicilan : Math.floor(nominal / tenor);
 
-  // Generate jadwal: 1 baris per bulan. Cicilan terakhir menyerap sisa supaya total = nominal.
-  var jadwalRows = [];
-  var akumulasi = 0;
-  var jtAkhir = first;
-  for (var k = 1; k <= tenor; k++) {
-    var due = new Date(first.getFullYear(), first.getMonth() + (k - 1), first.getDate());
-    var nominalCic = (k < tenor) ? perBulan : (nominal - akumulasi); // baris terakhir = sisa
-    akumulasi += (k < tenor) ? perBulan : nominalCic;
-    jadwalRows.push([loanId, nama, akun, k, due, nominalCic]);
-    jtAkhir = due;
-  }
-  // Tulis sekaligus (batch) supaya ringan.
+  // Bangun baris jadwal (cicilan terakhir serap sisa) + tulis batch.
+  var jadwalRows = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first);
+  var jtAkhir = jadwalRows[jadwalRows.length - 1][4];
   var jSh = getSheet_('Jadwal', []);
   jSh.getRange(jSh.getLastRow() + 1, 1, jadwalRows.length, 6).setValues(jadwalRows);
 
   getSheet_('Pinjaman', []).appendRow([loanId, now, nama, akun, nominal, tenor, perBulan, first, jtAkhir, akunTf]);
   return { ok: true, jatuhTempo: fmtTanggal_(first), jatuhTempoAkhir: fmtTanggal_(jtAkhir), waktu: fmtWaktu_(now) };
+}
+
+// Bangun array baris Jadwal untuk 1 pinjaman. Baris terakhir menyerap sisa pembulatan.
+// Return: [[loanId, nama, akun, ke, dueDate, nominalCic], ...]
+function buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first) {
+  var rows = [];
+  var akumulasi = 0;
+  for (var k = 1; k <= tenor; k++) {
+    var due = new Date(first.getFullYear(), first.getMonth() + (k - 1), first.getDate());
+    var nominalCic = (k < tenor) ? perBulan : (nominal - akumulasi);
+    akumulasi += (k < tenor) ? perBulan : nominalCic;
+    rows.push([loanId, nama, akun, k, due, nominalCic]);
+  }
+  return rows;
+}
+
+// Untuk DATA LAMA yang diketik manual di sheet Pinjaman.
+// - Isi kolom ID (LoanID) yang kosong dengan angka unik.
+// - Buat baris Jadwal untuk pinjaman yang belum punya jadwal.
+// Aman dipanggil berulang (idempoten): pinjaman yang sudah ada jadwalnya dilewati.
+function generateJadwalDariSheet() {
+  ensureSetup_();
+  var pSh = getSheet_('Pinjaman', []);
+  var last = pSh.getLastRow();
+  if (last < 2) return { ok: true, dibuat: 0, idDiisi: 0, pesan: 'Tidak ada pinjaman.' };
+
+  var pRows = pSh.getRange(2, 1, last - 1, 10).getValues();
+
+  // LoanID yang SUDAH punya jadwal.
+  var jSh = getSheet_('Jadwal', []);
+  var adaJadwal = {};
+  if (jSh.getLastRow() >= 2) {
+    var jIds = jSh.getRange(2, 1, jSh.getLastRow() - 1, 1).getValues();
+    for (var x = 0; x < jIds.length; x++) adaJadwal[Number(jIds[x][0])] = true;
+  }
+
+  var newJadwal = [];
+  var idDiisi = 0, dibuat = 0;
+  var baseId = new Date().getTime();
+
+  for (var i = 0; i < pRows.length; i++) {
+    var r = pRows[i];
+    var nama = String(r[2]).trim();
+    if (!nama) continue; // baris kosong, lewati
+
+    var loanId = Number(r[0]);
+    if (!loanId) { // ID kosong -> isi otomatis (unik: base + nomor baris)
+      loanId = baseId + i;
+      pSh.getRange(i + 2, 1).setValue(loanId);
+      idDiisi++;
+    }
+    if (adaJadwal[loanId]) continue; // sudah ada jadwal
+
+    var akun = String(r[3]).trim();
+    var nominal = Number(r[4]) || 0;
+    var tenor = Number(r[5]) || 0;
+    var perBulan = Number(r[6]) || (tenor ? Math.floor(nominal / tenor) : 0);
+    var first = r[7] ? new Date(r[7]) : null;
+    if (!first) { // tempo pertama kosong -> pakai waktu + 1 bln, atau hari ini + 1 bln
+      var base = r[1] ? new Date(r[1]) : new Date();
+      first = hitungJatuhTempo_(base, 1);
+      pSh.getRange(i + 2, 8).setValue(first);
+    }
+    if (!nominal || !tenor) continue; // data tak lengkap, tak bisa dijadwalkan
+
+    var rowsJ = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first);
+    // Update Jatuh Tempo Akhir di sheet Pinjaman.
+    pSh.getRange(i + 2, 9).setValue(rowsJ[rowsJ.length - 1][4]);
+    for (var y = 0; y < rowsJ.length; y++) newJadwal.push(rowsJ[y]);
+    dibuat++;
+  }
+
+  if (newJadwal.length) {
+    jSh.getRange(jSh.getLastRow() + 1, 1, newJadwal.length, 6).setValues(newJadwal);
+  }
+  return { ok: true, dibuat: dibuat, idDiisi: idDiisi,
+    pesan: dibuat + ' pinjaman dibuatkan jadwal, ' + idDiisi + ' ID diisi otomatis.' };
 }
 
 function getPinjaman() {
@@ -380,46 +448,151 @@ function getLaporan(nama) {
   return out;
 }
 
-// PDF (base64) untuk 1 peminjam, atau semua jika nama kosong.
+// QR code sebagai data-URI base64 (PNG). Di-embed ke PDF supaya mandiri (tak perlu internet saat dibuka).
+// text = isi QR (mis. URL web app + nomor laporan). Gagal fetch -> kembalikan '' (PDF tetap jadi).
+function qrDataUri_(text) {
+  try {
+    var url = 'https://quickchart.io/qr?margin=1&size=150&text=' + encodeURIComponent(text);
+    var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (resp.getResponseCode() !== 200) return '';
+    var b64 = Utilities.base64Encode(resp.getBlob().getBytes());
+    return 'data:image/png;base64,' + b64;
+  } catch (e) {
+    return '';
+  }
+}
+
+// URL web app (untuk QR). Kosong kalau belum di-deploy sebagai web app.
+function webAppUrl_() {
+  try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }
+}
+
+// PDF laporan keuangan profesional untuk 1 peminjam (atau semua jika nama kosong).
 function exportPdf(nama) {
   var data = getLaporan(nama);
-  var tglCetak = fmtWaktu_(new Date());
+  var now = new Date();
+  var tglCetak = fmtWaktu_(now);
+  var noLaporan = 'KP-' + Utilities.formatDate(now, TZ, 'yyyyMMdd-HHmmss');
 
-  var html = '<html><head><meta charset="utf-8"><style>'
-    + 'body{font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#1a1a1a;padding:26px;}'
-    + 'h1{font-size:18px;margin:0 0 2px;}'
-    + '.meta{color:#666;font-size:11px;margin-bottom:16px;}'
-    + 'h2{font-size:14px;margin:18px 0 6px;border-bottom:2px solid #333;padding-bottom:3px;}'
-    + 'table{width:100%;border-collapse:collapse;margin-bottom:6px;}'
-    + 'th,td{border:1px solid #ccc;padding:5px 7px;text-align:left;}'
-    + 'th{background:#f0f0f0;} .r{text-align:right;}'
-    + '.sum{font-size:12px;margin-top:3px;} .sisa{font-weight:bold;}'
-    + '</style></head><body>';
-  html += '<h1>Laporan Pinjaman</h1>';
-  html += '<div class="meta">Dicetak: ' + tglCetak + (nama ? ' &middot; Peminjam: ' + nama : ' &middot; Semua Peminjam') + '</div>';
+  // QR berisi info verifikasi + link app. Saat di-scan membuka web app ini.
+  var qrText = (webAppUrl_() || 'Kelola Pinjaman Haryadi')
+    + ' | No:' + noLaporan
+    + ' | ' + (nama || 'SEMUA')
+    + ' | ' + Utilities.formatDate(now, TZ, 'yyyy-MM-dd HH:mm');
+  var qr = qrDataUri_(qrText);
+
+  // Hitung grand total bila semua peminjam.
+  var gTotPinjam = 0, gTotBayar = 0, gSisa = 0;
+  for (var z = 0; z < data.length; z++) { gTotPinjam += data[z].totalPinjam; gTotBayar += data[z].totalBayar; gSisa += data[z].sisa; }
+
+  var BLUE = '#0066AE', DARK = '#003e73', GOLD = '#F2A900';
+
+  var css = ''
+    + '@page{ margin:0; }'
+    + '*{ box-sizing:border-box; }'
+    + 'body{ font-family:Arial,Helvetica,sans-serif; font-size:11px; color:#1f2937; margin:0; }'
+    + '.page{ padding:0 32px 90px; }'
+    + '.hd{ background:linear-gradient(135deg,'+BLUE+','+DARK+'); color:#fff; padding:22px 32px; display:flex; justify-content:space-between; align-items:flex-start; }'
+    + '.hd .l{ display:flex; gap:12px; align-items:center; }'
+    + '.hd .logo{ width:44px; height:44px; border-radius:10px; background:'+GOLD+'; color:'+DARK+'; font-weight:800; font-size:22px; display:flex; align-items:center; justify-content:center; }'
+    + '.hd h1{ font-size:19px; margin:0; letter-spacing:.3px; }'
+    + '.hd .s{ font-size:10.5px; color:rgba(255,255,255,.82); margin-top:2px; }'
+    + '.hd .r{ text-align:right; }'
+    + '.hd .qr{ width:78px; height:78px; background:#fff; padding:4px; border-radius:8px; }'
+    + '.hd .no{ font-size:9.5px; color:rgba(255,255,255,.82); margin-top:5px; }'
+    + '.ribbon{ height:5px; background:'+GOLD+'; }'
+    + '.metarow{ display:flex; justify-content:space-between; font-size:10px; color:#6b7280; padding:12px 0 4px; border-bottom:1px solid #e5e7eb; margin-bottom:14px; }'
+    + '.cards{ display:flex; gap:10px; margin:14px 0 6px; }'
+    + '.kpi{ flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:11px 13px; }'
+    + '.kpi .t{ font-size:9px; text-transform:uppercase; letter-spacing:.5px; color:#6b7280; }'
+    + '.kpi .v{ font-size:15px; font-weight:800; margin-top:3px; color:'+DARK+'; }'
+    + '.kpi.bad .v{ color:#dc2626; } .kpi.ok .v{ color:#0a8f4d; }'
+    + 'h2{ font-size:13px; margin:18px 0 7px; color:'+DARK+'; border-left:4px solid '+GOLD+'; padding-left:8px; }'
+    + 'table{ width:100%; border-collapse:collapse; margin-bottom:4px; }'
+    + 'th,td{ padding:6px 8px; text-align:left; font-size:10px; }'
+    + 'thead th{ background:'+BLUE+'; color:#fff; font-weight:600; text-transform:uppercase; font-size:9px; letter-spacing:.3px; }'
+    + 'tbody tr:nth-child(even){ background:#f6f9fc; }'
+    + 'tbody td{ border-bottom:1px solid #e8edf3; }'
+    + '.r{ text-align:right; } .c{ text-align:center; }'
+    + '.lunas{ color:#0a8f4d; font-weight:700; } .belum{ color:#dc2626; font-weight:700; }'
+    + '.subt{ display:flex; justify-content:flex-end; gap:26px; font-size:10.5px; margin:6px 2px 0; }'
+    + '.subt b{ color:'+DARK+'; }'
+    + '.sisarow{ display:flex; justify-content:flex-end; margin-top:5px; }'
+    + '.sisabox{ background:#fff4f4; border:1px solid #fecaca; border-radius:8px; padding:7px 14px; font-weight:800; color:#dc2626; font-size:12px; }'
+    + '.sisabox.ok{ background:#ecfdf3; border-color:#a7f3d0; color:#0a8f4d; }'
+    + '.foot{ position:fixed; bottom:0; left:0; right:0; padding:10px 32px; border-top:1px solid #e5e7eb; font-size:8.5px; color:#9ca3af; display:flex; justify-content:space-between; }'
+    + '.sign{ margin-top:30px; display:flex; justify-content:flex-end; }'
+    + '.sign .box{ text-align:center; font-size:10px; color:#374151; }'
+    + '.sign .line{ margin-top:46px; border-top:1px solid #9ca3af; padding-top:4px; width:170px; }';
+
+  var html = '<html><head><meta charset="utf-8"><style>' + css + '</style></head><body>';
+
+  // ---- Header band ----
+  html += '<div class="hd"><div class="l"><div class="logo">H</div>'
+    + '<div><h1>LAPORAN PINJAMAN</h1><div class="s">Kelola Pinjaman &middot; atas nama Haryadi</div></div></div>'
+    + '<div class="r">'
+    + (qr ? '<img class="qr" src="' + qr + '">' : '')
+    + '<div class="no">No. ' + noLaporan + '</div></div></div>';
+  html += '<div class="ribbon"></div>';
+
+  html += '<div class="page">';
+  html += '<div class="metarow"><span>Dicetak: ' + tglCetak + '</span><span>'
+    + (nama ? 'Peminjam: <b>' + nama + '</b>' : 'Cakupan: <b>Semua Peminjam</b>') + '</span></div>';
 
   if (!data.length) {
-    html += '<p>Belum ada data.</p>';
+    html += '<p style="color:#6b7280">Belum ada data untuk ditampilkan.</p>';
   } else {
+    // KPI ringkasan (grand total).
+    html += '<div class="cards">'
+      + '<div class="kpi"><div class="t">Total Pinjaman</div><div class="v">' + rupiah_(gTotPinjam) + '</div></div>'
+      + '<div class="kpi ok"><div class="t">Total Pembayaran</div><div class="v">' + rupiah_(gTotBayar) + '</div></div>'
+      + '<div class="kpi ' + (gSisa > 0 ? 'bad' : 'ok') + '"><div class="t">Sisa Tagihan</div><div class="v">' + rupiah_(gSisa) + '</div></div>'
+      + '</div>';
+
     for (var i = 0; i < data.length; i++) {
       var d = data[i];
       html += '<h2>' + d.nama + '</h2>';
-      html += '<table><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th></tr>';
+
+      // Tabel pinjaman.
+      html += '<table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="c">Tenor</th><th class="r">Cicilan/bln</th><th>Tempo</th></tr></thead><tbody>';
       for (var j = 0; j < d.pinjaman.length; j++) {
         var p = d.pinjaman[j];
         html += '<tr><td>' + p.tanggal + '</td><td>' + p.akun + '</td><td class="r">' + rupiah_(p.nominal)
-          + '</td><td class="r">' + p.tenor + ' bln</td><td class="r">' + (p.cicilan ? rupiah_(p.cicilan) : '-') + '</td><td>' + p.jatuhTempo + '</td></tr>';
+          + '</td><td class="c">' + p.tenor + ' bln</td><td class="r">' + (p.cicilan ? rupiah_(p.cicilan) : '-') + '</td><td>' + p.jatuhTempo + '</td></tr>';
       }
-      html += '</table>';
-      html += '<div class="sum">Total Pinjaman: ' + rupiah_(d.totalPinjam) + '</div>';
-      html += '<div class="sum">Total Pembayaran: ' + rupiah_(d.totalBayar) + '</div>';
-      html += '<div class="sum sisa">Sisa Tagihan: ' + rupiah_(d.sisa) + '</div>';
+      html += '</tbody></table>';
+
+      // Jadwal cicilan + status (dari sheet Jadwal).
+      var jad = getJadwal(d.nama, '');
+      if (jad.length) {
+        html += '<table style="margin-top:8px"><thead><tr><th class="c">Ke-</th><th>Akun</th><th>Jatuh Tempo</th><th class="r">Nominal</th><th class="c">Status</th></tr></thead><tbody>';
+        for (var s = 0; s < jad.length; s++) {
+          var c = jad[s];
+          html += '<tr><td class="c">' + c.ke + '</td><td>' + c.akun + '</td><td>' + c.jatuhTempo + '</td><td class="r">' + rupiah_(c.nominal)
+            + '</td><td class="c ' + (c.lunas ? 'lunas">LUNAS' : 'belum">BELUM') + '</td></tr>';
+        }
+        html += '</tbody></table>';
+      }
+
+      html += '<div class="subt"><span>Total Pinjaman: <b>' + rupiah_(d.totalPinjam) + '</b></span>'
+        + '<span>Total Bayar: <b>' + rupiah_(d.totalBayar) + '</b></span></div>';
+      html += '<div class="sisarow"><div class="sisabox ' + (d.sisa > 0 ? '' : 'ok') + '">Sisa Tagihan: ' + rupiah_(d.sisa) + '</div></div>';
     }
+
+    // Tanda tangan.
+    html += '<div class="sign"><div class="box">Hormat kami,<div class="line">( Haryadi )</div></div></div>';
   }
+
+  html += '</div>'; // .page
+
+  // Footer (muncul tiap halaman).
+  html += '<div class="foot"><span>Dokumen ini dibuat otomatis oleh sistem Kelola Pinjaman.</span>'
+    + '<span>Scan QR untuk verifikasi &middot; ' + noLaporan + '</span></div>';
+
   html += '</body></html>';
 
   var pdf = Utilities.newBlob(html, 'text/html', 'laporan.html').getAs('application/pdf');
   var fname = 'Laporan_' + (nama ? nama.replace(/\s+/g, '_') : 'Semua')
-    + '_' + Utilities.formatDate(new Date(), TZ, 'yyyyMMdd_HHmm') + '.pdf';
+    + '_' + Utilities.formatDate(now, TZ, 'yyyyMMdd_HHmm') + '.pdf';
   return { base64: Utilities.base64Encode(pdf.getBytes()), filename: fname };
 }
