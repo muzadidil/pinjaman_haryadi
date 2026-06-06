@@ -139,28 +139,37 @@ function simpanPinjaman(p) {
   var first = parseTgl_(p.tglPertama);
   if (!first) first = hitungJatuhTempo_(now, 1); // default: 1 bulan dari sekarang
 
-  // Cicilan per bulan: pakai input manual; jika kosong, bagi rata.
-  var perBulan = cicilan > 0 ? cicilan : Math.floor(nominal / tenor);
+  // Cicilan per bulan: pakai input manual (ikut tagihan, sudah termasuk bunga); jika kosong, bagi rata.
+  var cicilanManual = cicilan > 0;
+  var perBulan = cicilanManual ? cicilan : Math.floor(nominal / tenor);
 
-  // Bangun baris jadwal (cicilan terakhir serap sisa) + tulis batch.
-  var jadwalRows = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first);
+  // Bangun baris jadwal + tulis batch. Manual -> tiap cicilan = perBulan; auto -> terakhir serap sisa.
+  var jadwalRows = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first, cicilanManual);
   var jtAkhir = jadwalRows[jadwalRows.length - 1][4];
   var jSh = getSheet_('Jadwal', []);
   jSh.getRange(jSh.getLastRow() + 1, 1, jadwalRows.length, 6).setValues(jadwalRows);
 
-  getSheet_('Pinjaman', []).appendRow([loanId, now, nama, akun, nominal, tenor, perBulan, first, jtAkhir, akunTf]);
+  // Simpan perBulan ke kolom Cicilan/bln HANYA jika manual. Auto-divide -> kosong, supaya bila
+  // jadwalnya pernah dihapus lalu di-Generate ulang, tetap terdeteksi sebagai auto (bukan manual).
+  getSheet_('Pinjaman', []).appendRow([loanId, now, nama, akun, nominal, tenor, (cicilanManual ? perBulan : ''), first, jtAkhir, akunTf]);
   return { ok: true, jatuhTempo: fmtTanggal_(first), jatuhTempoAkhir: fmtTanggal_(jtAkhir), waktu: fmtWaktu_(now) };
 }
 
-// Bangun array baris Jadwal untuk 1 pinjaman. Baris terakhir menyerap sisa pembulatan.
+// Bangun array baris Jadwal untuk 1 pinjaman.
+// cicilanManual = true  -> tiap cicilan = perBulan apa adanya (ikut form Cicilan/bln yang
+//                          sudah termasuk bunga). Total jadwal = perBulan x tenor (boleh > pokok).
+// cicilanManual = false -> bagi rata; cicilan terakhir menyerap sisa pembulatan agar
+//                          total jadwal = nominal pokok persis.
 // Return: [[loanId, nama, akun, ke, dueDate, nominalCic], ...]
-function buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first) {
+function buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first, cicilanManual) {
   var rows = [];
   var akumulasi = 0;
   for (var k = 1; k <= tenor; k++) {
     var due = new Date(first.getFullYear(), first.getMonth() + (k - 1), first.getDate());
-    var nominalCic = (k < tenor) ? perBulan : (nominal - akumulasi);
-    akumulasi += (k < tenor) ? perBulan : nominalCic;
+    var nominalCic = cicilanManual
+      ? perBulan                                       // ikut tagihan per bulan apa adanya
+      : ((k < tenor) ? perBulan : (nominal - akumulasi)); // bagi rata: terakhir serap sisa
+    akumulasi += nominalCic;
     rows.push([loanId, nama, akun, k, due, nominalCic]);
   }
   return rows;
@@ -206,7 +215,8 @@ function generateJadwalDariSheet() {
     var akun = String(r[3]).trim();
     var nominal = Number(r[4]) || 0;
     var tenor = Number(r[5]) || 0;
-    var perBulan = Number(r[6]) || (tenor ? Math.floor(nominal / tenor) : 0);
+    var cicilanManual = (Number(r[6]) || 0) > 0; // kolom "Cicilan/bln" diisi manual?
+    var perBulan = cicilanManual ? Number(r[6]) : (tenor ? Math.floor(nominal / tenor) : 0);
     var first = r[7] ? new Date(r[7]) : null;
     if (!first) { // tempo pertama kosong -> pakai waktu + 1 bln, atau hari ini + 1 bln
       var base = r[1] ? new Date(r[1]) : new Date();
@@ -215,7 +225,7 @@ function generateJadwalDariSheet() {
     }
     if (!nominal || !tenor) continue; // data tak lengkap, tak bisa dijadwalkan
 
-    var rowsJ = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first);
+    var rowsJ = buatJadwalRows_(loanId, nama, akun, nominal, tenor, perBulan, first, cicilanManual);
     // Update Jatuh Tempo Akhir di sheet Pinjaman.
     pSh.getRange(i + 2, 9).setValue(rowsJ[rowsJ.length - 1][4]);
     for (var y = 0; y < rowsJ.length; y++) newJadwal.push(rowsJ[y]);
@@ -319,6 +329,14 @@ function getJadwal(nama, loanId) {
   nama = String(nama || '').trim();
   loanId = loanId ? Number(loanId) : 0;
 
+  // Map loanId -> nominal pokok (utk tampil "Pinjaman Pokok" di kartu cicilan).
+  var pokokMap = {};
+  var pSh = getSheet_('Pinjaman', []);
+  if (pSh.getLastRow() >= 2) {
+    var pRows = pSh.getRange(2, 1, pSh.getLastRow() - 1, 10).getValues();
+    for (var p = 0; p < pRows.length; p++) pokokMap[Number(pRows[p][0])] = Number(pRows[p][4]) || 0;
+  }
+
   // Set cicilan yang sudah dibayar: key = "loanId|ke".
   var paid = {};
   var bSh = getSheet_('Pembayaran', []);
@@ -348,6 +366,7 @@ function getJadwal(nama, loanId) {
       jatuhTempo: r[4] ? fmtTanggal_(new Date(r[4])) : '',
       jatuhTempoSort: r[4] ? new Date(r[4]).getTime() : 0,
       nominal: Number(r[5]) || 0,
+      pokok: pokokMap[Number(r[0])] || 0,
       lunas: !!paid[Number(r[0]) + '|' + (Number(r[3]) || 0)]
     });
   }
@@ -405,8 +424,10 @@ function getLaporan(nama) {
   nama = String(nama || '').trim();
   var pSh = getSheet_('Pinjaman', []);
   var bSh = getSheet_('Pembayaran', []);
+  var jSh = getSheet_('Jadwal', []);
   var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 10).getValues();
   var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 8).getValues();
+  var jRows = jSh.getLastRow() < 2 ? [] : jSh.getRange(2, 1, jSh.getLastRow() - 1, 6).getValues();
 
   var bayarMap = {};
   for (var b = 0; b < bRows.length; b++) {
@@ -415,22 +436,35 @@ function getLaporan(nama) {
     bayarMap[bn] = (bayarMap[bn] || 0) + (Number(bRows[b][6]) || 0);
   }
 
+  // Total tagihan per pinjaman = jumlah seluruh cicilan di Jadwal (sudah termasuk bunga).
+  // Inilah yang harus dibayar peminjam, bisa lebih besar dari pokok.
+  var tagihanByLoan = {};
+  for (var t = 0; t < jRows.length; t++) {
+    var lid = Number(jRows[t][0]);
+    tagihanByLoan[lid] = (tagihanByLoan[lid] || 0) + (Number(jRows[t][5]) || 0);
+  }
+
   var map = {};
   for (var i = 0; i < pRows.length; i++) {
     var r = pRows[i];
     var pn = String(r[2]).trim();
     if (!pn) continue;
     if (nama && pn !== nama) continue;
-    if (!map[pn]) map[pn] = { nama: pn, pinjaman: [], totalPinjam: 0 };
+    if (!map[pn]) map[pn] = { nama: pn, pinjaman: [], totalPinjam: 0, totalTagihan: 0 };
+    var pokok = Number(r[4]) || 0;
+    var lid2 = Number(r[0]);
+    // Pinjaman tanpa jadwal -> pakai pokok sebagai tagihan (fallback aman).
+    var tagihan = tagihanByLoan.hasOwnProperty(lid2) ? tagihanByLoan[lid2] : pokok;
     map[pn].pinjaman.push({
       tanggal: r[1] ? fmtTanggal_(new Date(r[1])) : '',
       akun: r[3],
-      nominal: Number(r[4]) || 0,
+      nominal: pokok,
       tenor: r[5],
       cicilan: Number(r[6]) || 0,
       jatuhTempo: r[7] ? fmtTanggal_(new Date(r[7])) : ''
     });
-    map[pn].totalPinjam += Number(r[4]) || 0;
+    map[pn].totalPinjam += pokok;
+    map[pn].totalTagihan += tagihan;
   }
 
   var out = [];
@@ -440,8 +474,9 @@ function getLaporan(nama) {
       nama: map[k].nama,
       pinjaman: map[k].pinjaman,
       totalPinjam: map[k].totalPinjam,
+      totalTagihan: map[k].totalTagihan,
       totalBayar: totalBayar,
-      sisa: map[k].totalPinjam - totalBayar
+      sisa: map[k].totalTagihan - totalBayar
     });
   }
   out.sort(function (a, b) { return a.nama.localeCompare(b.nama); });
@@ -482,8 +517,8 @@ function exportPdf(nama) {
   var qr = qrDataUri_(qrText);
 
   // Hitung grand total bila semua peminjam.
-  var gTotPinjam = 0, gTotBayar = 0, gSisa = 0;
-  for (var z = 0; z < data.length; z++) { gTotPinjam += data[z].totalPinjam; gTotBayar += data[z].totalBayar; gSisa += data[z].sisa; }
+  var gTotPinjam = 0, gTotTagihan = 0, gTotBayar = 0, gSisa = 0;
+  for (var z = 0; z < data.length; z++) { gTotPinjam += data[z].totalPinjam; gTotTagihan += (data[z].totalTagihan != null ? data[z].totalTagihan : data[z].totalPinjam); gTotBayar += data[z].totalBayar; gSisa += data[z].sisa; }
 
   var BLUE = '#0066AE', DARK = '#003e73', GOLD = '#F2A900';
 
@@ -544,7 +579,8 @@ function exportPdf(nama) {
   } else {
     // KPI ringkasan (grand total).
     html += '<div class="cards">'
-      + '<div class="kpi"><div class="t">Total Pinjaman</div><div class="v">' + rupiah_(gTotPinjam) + '</div></div>'
+      + '<div class="kpi"><div class="t">Pinjaman Pokok</div><div class="v">' + rupiah_(gTotPinjam) + '</div></div>'
+      + '<div class="kpi"><div class="t">Total Tagihan</div><div class="v">' + rupiah_(gTotTagihan) + '</div></div>'
       + '<div class="kpi ok"><div class="t">Total Pembayaran</div><div class="v">' + rupiah_(gTotBayar) + '</div></div>'
       + '<div class="kpi ' + (gSisa > 0 ? 'bad' : 'ok') + '"><div class="t">Sisa Tagihan</div><div class="v">' + rupiah_(gSisa) + '</div></div>'
       + '</div>';
@@ -574,7 +610,8 @@ function exportPdf(nama) {
         html += '</tbody></table>';
       }
 
-      html += '<div class="subt"><span>Total Pinjaman: <b>' + rupiah_(d.totalPinjam) + '</b></span>'
+      html += '<div class="subt"><span>Pinjaman Pokok: <b>' + rupiah_(d.totalPinjam) + '</b></span>'
+        + '<span>Total Tagihan: <b>' + rupiah_(d.totalTagihan != null ? d.totalTagihan : d.totalPinjam) + '</b></span>'
         + '<span>Total Bayar: <b>' + rupiah_(d.totalBayar) + '</b></span></div>';
       html += '<div class="sisarow"><div class="sisabox ' + (d.sisa > 0 ? '' : 'ok') + '">Sisa Tagihan: ' + rupiah_(d.sisa) + '</div></div>';
     }

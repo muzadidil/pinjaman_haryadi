@@ -94,6 +94,9 @@
     .cicsisa .label{ color:var(--muted); font-weight:600; }
     .cicsisa .val{ font-weight:800; color:var(--bad); }
     .cicsisa.lunas .val{ color:var(--ok); }
+    .cicpokok{ display:flex; justify-content:space-between; align-items:center; padding:11px 16px; font-size:12.5px; background:#fff; border-top:1px solid var(--line); }
+    .cicpokok .label{ color:var(--muted); font-weight:600; }
+    .cicpokok .val{ font-weight:700; color:var(--ink); }
   </style>
 </head>
 <body>
@@ -531,9 +534,10 @@
     var groups = {}; var order = [];
     rows.forEach(function(r){
       var key = String(r.loanId);
-      if (!groups[key]){ groups[key] = { nama:r.nama, akun:r.akun, items:[], total:0, sisa:0 }; order.push(key); }
+      if (!groups[key]){ groups[key] = { nama:r.nama, akun:r.akun, items:[], total:0, sisa:0, pokok:0 }; order.push(key); }
       groups[key].items.push(r);
-      groups[key].total += Number(r.nominal)||0;
+      groups[key].total += Number(r.nominal)||0;             // total tagihan = jumlah cicilan (termasuk bunga)
+      groups[key].pokok = Number(r.pokok)||0;                 // pinjaman pokok (sama utk tiap baris pinjaman)
       if (!r.lunas) groups[key].sisa += Number(r.nominal)||0;
     });
     order.forEach(function(key){
@@ -550,10 +554,13 @@
       var sisaHtml = '<div class="cicsisa'+(lunasSemua?' lunas':'')+'">'
         + '<span class="label">Sisa Belum Dibayar</span>'
         + '<span class="val">'+(lunasSemua?'✓ LUNAS':rp(g.sisa))+'</span></div>';
+      // Pinjaman pokok (nominal asli) ditampilkan sebagai info; total tagihan = jumlah cicilan.
+      var pokokHtml = g.pokok ? ('<div class="cicpokok"><span class="label">Pinjaman Pokok</span><span class="val">'+rp(g.pokok)+'</span></div>') : '';
       var html = '<div class="ciccard">'
         + '<div class="cichead"><span class="cicname">'+g.nama+'</span><span class="cicakun">'+g.akun+'</span></div>'
         + '<div class="cicbody">'+list+'</div>'
-        + '<div class="cictotal"><span class="label">Total Pinjaman</span><span class="val">'+rp(g.total)+'</span></div>'
+        + pokokHtml
+        + '<div class="cictotal"><span class="label">Total Tagihan</span><span class="val">'+rp(g.total)+'</span></div>'
         + sisaHtml
         + '</div>';
       box.insertAdjacentHTML('beforeend', html);
@@ -574,7 +581,8 @@
         + '<div class="lapname">'+d.nama+'</div>'
         + '<div class="scroll"><table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
         + '<div class="totals">'
-        +   '<div><span>Total Pinjaman</span><span>'+rp(d.totalPinjam)+'</span></div>'
+        +   '<div><span>Pinjaman Pokok</span><span>'+rp(d.totalPinjam)+'</span></div>'
+        +   '<div><span>Total Tagihan</span><span>'+rp(d.totalTagihan!=null?d.totalTagihan:d.totalPinjam)+'</span></div>'
         +   '<div><span>Total Pembayaran</span><span>'+rp(d.totalBayar)+'</span></div>'
         +   '<div class="sisa'+merah+'"><span>Sisa Tagihan</span><span>'+rp(d.sisa)+'</span></div>'
         + '</div></div>';

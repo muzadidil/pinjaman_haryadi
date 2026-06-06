@@ -1,0 +1,9 @@
+# clasp (Google Apps Script CLI) — jangan commit konfigurasi & kredensial
+.clasp.json
+.clasprc.json
+
+# File sementara / sistem
+node_modules/
+*.log
+.DS_Store
+Thumbs.db
