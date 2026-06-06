@@ -150,10 +150,13 @@
       <label>Pilih Pinjaman</label>
       <select id="b_loan"><option value="">-- pilih peminjam dulu --</option></select>
       <div class="hint">Pilih pinjaman mana yang sedang dibayar.</div>
-      <label>Nominal Bayar</label>
-      <input type="text" id="b_nominal" inputmode="numeric" placeholder="Rp 0">
-      <label>Catatan (opsional)</label>
-      <input type="text" id="b_catatan" placeholder="cth: cicilan ke-1">
+      <label>Cicilan yang Dibayar</label>
+      <select id="b_cicilan"><option value="">-- pilih pinjaman dulu --</option></select>
+      <div class="hint">Hanya cicilan yang belum lunas yang tampil.</div>
+      <label>Nominal Bayar (otomatis)</label>
+      <input type="text" id="b_nominal" class="ro" readonly placeholder="Rp 0">
+      <label>Catatan (otomatis)</label>
+      <input type="text" id="b_catatan" class="ro" readonly placeholder="cicilan ke-">
       <button class="primary" id="btn_simpan_bayar">Simpan Pembayaran</button>
     </div>
 
@@ -337,12 +340,22 @@
     });
   }
 
+  // Reset dropdown cicilan + field nominal/catatan ke kondisi kosong.
+  function resetCicilanBayar(msg){
+    document.getElementById('b_cicilan').innerHTML = '<option value="">'+(msg||'-- pilih pinjaman dulu --')+'</option>';
+    document.getElementById('b_nominal').value = '';
+    document.getElementById('b_catatan').value = '';
+    CICILANS = [];
+  }
+
   // Saat peminjam dipilih di tab Pembayaran, isi dropdown pinjaman miliknya.
-  var LOANS = []; // cache hasil getPinjamanByNama
+  var LOANS = [];    // cache getPinjamanByNama
+  var CICILANS = []; // cache getCicilanBelumLunas
   function loadLoansForBayar(){
     var nama = document.getElementById('b_nama').value;
     var sel = document.getElementById('b_loan');
     LOANS = [];
+    resetCicilanBayar();
     if (!nama){ sel.innerHTML = '<option value="">-- pilih peminjam dulu --</option>'; return; }
     sel.innerHTML = '<option value="">Memuat...</option>';
     gs('getPinjamanByNama', nama).then(function(list){
@@ -353,6 +366,33 @@
         var o = document.createElement('option'); o.value = l.loanId; o.textContent = l.label; sel.appendChild(o);
       });
     }).catch(function(e){ sel.innerHTML = '<option value="">(gagal memuat)</option>'; toast('Gagal: '+(e.message||e), true); });
+  }
+
+  // Saat pinjaman dipilih, isi dropdown cicilan yang belum lunas.
+  function loadCicilanForBayar(){
+    var loanId = document.getElementById('b_loan').value;
+    var sel = document.getElementById('b_cicilan');
+    resetCicilanBayar();
+    if (!loanId){ return; }
+    sel.innerHTML = '<option value="">Memuat...</option>';
+    gs('getCicilanBelumLunas', loanId).then(function(list){
+      CICILANS = list || [];
+      if (!CICILANS.length){ sel.innerHTML = '<option value="">(semua cicilan sudah lunas)</option>'; return; }
+      sel.innerHTML = '<option value="">-- pilih cicilan --</option>';
+      CICILANS.forEach(function(c){
+        var o = document.createElement('option'); o.value = c.ke; o.textContent = c.label; sel.appendChild(o);
+      });
+    }).catch(function(e){ sel.innerHTML = '<option value="">(gagal memuat)</option>'; toast('Gagal: '+(e.message||e), true); });
+  }
+
+  // Saat cicilan dipilih, isi nominal + catatan otomatis.
+  function onPilihCicilan(){
+    var ke = document.getElementById('b_cicilan').value;
+    var c = null;
+    for (var i=0;i<CICILANS.length;i++){ if (String(CICILANS[i].ke) === String(ke)){ c = CICILANS[i]; break; } }
+    if (!c){ document.getElementById('b_nominal').value = ''; document.getElementById('b_catatan').value = ''; return; }
+    document.getElementById('b_nominal').value = rp(c.nominal);
+    document.getElementById('b_catatan').value = 'cicilan ke-' + c.ke;
   }
 
   function loadPinjaman(){ return gs('getPinjaman').then(renderPinjaman); }
@@ -388,22 +428,31 @@
   function submitBayar(){
     var btn = document.getElementById('btn_simpan_bayar');
     var loanId = document.getElementById('b_loan').value;
+    var ke = document.getElementById('b_cicilan').value;
+    if (!document.getElementById('b_nama').value){ toast('Pilih peminjam.', true); return; }
+    if (!loanId){ toast('Pilih pinjaman.', true); return; }
+    if (!ke){ toast('Pilih cicilan yang dibayar.', true); return; }
+
+    // Ambil data dari cache (anti salah ketik).
     var akun = '';
     for (var i=0;i<LOANS.length;i++){ if (String(LOANS[i].loanId) === String(loanId)){ akun = LOANS[i].akun; break; } }
+    var c = null;
+    for (var j=0;j<CICILANS.length;j++){ if (String(CICILANS[j].ke) === String(ke)){ c = CICILANS[j]; break; } }
+    if (!c){ toast('Cicilan tidak valid, muat ulang.', true); return; }
+
     var payload = {
       nama: document.getElementById('b_nama').value,
       loanId: loanId,
+      ke: ke,
       akun: akun,
-      nominal: parseRp(document.getElementById('b_nominal').value),
-      catatan: document.getElementById('b_catatan').value.trim()
+      nominal: c.nominal,
+      catatan: 'cicilan ke-' + ke
     };
-    if (!payload.nama || !payload.nominal){ toast('Lengkapi nama & nominal.', true); return; }
     btn.disabled = true; btn.textContent = 'Menyimpan...';
     gs('simpanPembayaran', payload).then(function(){
-      toast('Pembayaran tersimpan.');
-      document.getElementById('b_nominal').value = '';
-      document.getElementById('b_catatan').value = '';
+      toast('Pembayaran cicilan ke-' + ke + ' tersimpan.');
       document.getElementById('b_loan').value = '';
+      resetCicilanBayar();
       loadBayar();
     }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
       .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; });
@@ -506,6 +555,8 @@
     document.getElementById('btn_simpan_pinjaman').onclick = submitPinjaman;
     document.getElementById('btn_simpan_bayar').onclick = submitBayar;
     document.getElementById('b_nama').addEventListener('change', loadLoansForBayar);
+    document.getElementById('b_loan').addEventListener('change', loadCicilanForBayar);
+    document.getElementById('b_cicilan').addEventListener('change', onPilihCicilan);
     document.getElementById('reload_pinjaman').onclick = loadPinjaman;
     document.getElementById('reload_bayar').onclick = loadBayar;
     document.getElementById('btn_tampil_cicilan').onclick = tampilCicilan;

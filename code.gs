@@ -44,7 +44,7 @@ function getSheet_(name, headers) {
 function ensureSetup_() {
   getSheet_('Pinjaman', ['ID', 'Waktu', 'Nama Peminjam', 'Akun Digunakan', 'Nominal', 'Tenor (bln)', 'Cicilan/bln', 'Jatuh Tempo Pertama', 'Jatuh Tempo Akhir', 'Akun TF']);
   getSheet_('Jadwal', ['LoanID', 'Nama Peminjam', 'Akun', 'Cicilan ke-', 'Jatuh Tempo', 'Nominal Cicilan']);
-  getSheet_('Pembayaran', ['ID', 'Waktu', 'LoanID', 'Nama Peminjam', 'Akun', 'Nominal Bayar', 'Catatan']);
+  getSheet_('Pembayaran', ['ID', 'Waktu', 'LoanID', 'Cicilan ke-', 'Nama Peminjam', 'Akun', 'Nominal Bayar', 'Catatan']);
   getSheet_('Peminjam', ['Nama']);
   var akun = getSheet_('Akun', ['Akun']);
   if (akun.getLastRow() < 2) {
@@ -208,17 +208,18 @@ function getPinjamanByNama(nama) {
   return out;
 }
 
-// p: {nama, loanId, akun, nominal, catatan}
+// p: {nama, loanId, ke, akun, nominal, catatan}
 function simpanPembayaran(p) {
   ensureSetup_();
   var nama = String(p.nama || '').trim();
   var loanId = p.loanId ? Number(p.loanId) : '';
+  var ke = p.ke ? Number(p.ke) : '';
   var akun = String(p.akun || '').trim();
   var nominal = Number(p.nominal) || 0;
   var catatan = String(p.catatan || '').trim();
   if (!nama || !nominal) throw new Error('Lengkapi: nama & nominal.');
   var now = new Date();
-  getSheet_('Pembayaran', []).appendRow([now.getTime(), now, loanId, nama, akun, nominal, catatan]);
+  getSheet_('Pembayaran', []).appendRow([now.getTime(), now, loanId, ke, nama, akun, nominal, catatan]);
   return { ok: true, waktu: fmtWaktu_(now) };
 }
 
@@ -226,17 +227,18 @@ function getPembayaran() {
   var sh = getSheet_('Pembayaran', []);
   var last = sh.getLastRow();
   if (last < 2) return [];
-  var rows = sh.getRange(2, 1, last - 1, 7).getValues();
+  var rows = sh.getRange(2, 1, last - 1, 8).getValues();
   var out = [];
   for (var i = rows.length - 1; i >= 0; i--) {
     var r = rows[i];
     out.push({
       waktu: r[1] ? fmtWaktu_(new Date(r[1])) : '',
       loanId: r[2],
-      nama: r[3],
-      akun: r[4],
-      nominal: Number(r[5]) || 0,
-      catatan: r[6]
+      ke: r[3],
+      nama: r[4],
+      akun: r[5],
+      nominal: Number(r[6]) || 0,
+      catatan: r[7]
     });
   }
   return out;
@@ -271,6 +273,50 @@ function getJadwal(nama, loanId) {
   return out;
 }
 
+// Cicilan yang BELUM dibayar untuk 1 pinjaman (loanId).
+// = baris di Jadwal yang nomor 'ke'-nya belum ada di Pembayaran (loanId sama).
+function getCicilanBelumLunas(loanId) {
+  ensureSetup_();
+  loanId = Number(loanId) || 0;
+  if (!loanId) return [];
+
+  // Kumpulkan nomor cicilan yang sudah dibayar untuk loanId ini.
+  var bSh = getSheet_('Pembayaran', []);
+  var paid = {};
+  if (bSh.getLastRow() >= 2) {
+    var bRows = bSh.getRange(2, 1, bSh.getLastRow() - 1, 8).getValues();
+    for (var b = 0; b < bRows.length; b++) {
+      if (Number(bRows[b][2]) === loanId) {
+        var ke = Number(bRows[b][3]) || 0;
+        if (ke) paid[ke] = true;
+      }
+    }
+  }
+
+  // Ambil jadwal pinjaman ini, buang yang sudah dibayar.
+  var jSh = getSheet_('Jadwal', []);
+  if (jSh.getLastRow() < 2) return [];
+  var jRows = jSh.getRange(2, 1, jSh.getLastRow() - 1, 6).getValues();
+  var out = [];
+  for (var i = 0; i < jRows.length; i++) {
+    var r = jRows[i];
+    if (Number(r[0]) !== loanId) continue;
+    var nomor = Number(r[3]) || 0;
+    if (paid[nomor]) continue; // sudah lunas, lewati
+    out.push({
+      loanId: r[0],
+      ke: nomor,
+      akun: r[2],
+      jatuhTempo: r[4] ? fmtTanggal_(new Date(r[4])) : '',
+      jatuhTempoSort: r[4] ? new Date(r[4]).getTime() : 0,
+      nominal: Number(r[5]) || 0,
+      label: 'Cicilan ke-' + nomor + ' - ' + (r[4] ? fmtTanggal_(new Date(r[4])) : '') + ' - ' + rupiah_(Number(r[5]) || 0)
+    });
+  }
+  out.sort(function (a, b) { return a.jatuhTempoSort - b.jatuhTempoSort; });
+  return out;
+}
+
 // nama opsional. Kosong = semua peminjam.
 function getLaporan(nama) {
   ensureSetup_();
@@ -278,13 +324,13 @@ function getLaporan(nama) {
   var pSh = getSheet_('Pinjaman', []);
   var bSh = getSheet_('Pembayaran', []);
   var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 10).getValues();
-  var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 7).getValues();
+  var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 8).getValues();
 
   var bayarMap = {};
   for (var b = 0; b < bRows.length; b++) {
-    var bn = String(bRows[b][3]).trim();
+    var bn = String(bRows[b][4]).trim();
     if (!bn) continue;
-    bayarMap[bn] = (bayarMap[bn] || 0) + (Number(bRows[b][5]) || 0);
+    bayarMap[bn] = (bayarMap[bn] || 0) + (Number(bRows[b][6]) || 0);
   }
 
   var map = {};
