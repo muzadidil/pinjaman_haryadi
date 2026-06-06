@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <base target="_top">
+  <style>
+    :root{ --accent:#4f46e5; --accent2:#4338ca; --bg:#f5f6fa; --card:#fff; --line:#e5e7eb; --ink:#111827; --muted:#6b7280; --ok:#059669; --bad:#dc2626; }
+    *{ box-sizing:border-box; }
+    html{ height:100%; -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+    body{ margin:0; min-height:100%; min-height:100dvh; font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); font-size:15px; overflow-x:hidden; -webkit-tap-highlight-color:transparent; overscroll-behavior-y:contain; }
+    .wrap{ max-width:760px; margin:0 auto; padding:calc(14px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) calc(40px + env(safe-area-inset-bottom)) calc(14px + env(safe-area-inset-left)); }
+    h1{ font-size:18px; margin:6px 2px 2px; }
+    .sub{ color:var(--muted); font-size:12px; margin:0 2px 12px; }
+    .tabs{ display:flex; gap:6px; background:var(--card); padding:6px; border-radius:12px; position:sticky; top:0; z-index:5; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+    .tab{ flex:1; text-align:center; padding:10px 6px; border-radius:9px; cursor:pointer; font-weight:600; color:var(--muted); font-size:13px; user-select:none; }
+    .tab.active{ background:var(--accent); color:#fff; }
+    .panel{ display:none; margin-top:14px; }
+    .panel.active{ display:block; }
+    .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+    .clockbar{ display:flex; align-items:center; gap:8px; background:#eef2ff; color:var(--accent2); border-radius:10px; padding:8px 12px; font-weight:600; font-size:13px; margin-bottom:14px; }
+    label{ display:block; font-size:12px; font-weight:600; color:var(--muted); margin:12px 0 5px; }
+    input,select{ width:100%; padding:12px; border:1px solid var(--line); border-radius:10px; font-size:16px; background:#fff; color:var(--ink); -webkit-appearance:none; appearance:none; }
+    input:focus,select:focus{ outline:none; border-color:var(--accent); }
+    select{ background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236b7280' stroke-width='2' fill='none'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 13px center; padding-right:34px; }
+    .row{ display:flex; gap:8px; }
+    .row > *{ flex:1; }
+    .selrow{ display:flex; gap:8px; align-items:stretch; }
+    .selrow select{ flex:1; }
+    .plus{ width:44px; flex:none; border:1px solid var(--line); background:#fff; border-radius:10px; font-size:20px; color:var(--accent); cursor:pointer; }
+    .addbox{ display:none; gap:8px; margin-top:8px; }
+    .ro{ background:#f9fafb; color:var(--ink); font-weight:600; }
+    .hint{ font-size:11px; color:var(--muted); margin-top:4px; }
+    button.primary{ width:100%; margin-top:18px; padding:13px; border:none; border-radius:11px; background:var(--accent); color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
+    button.primary:active{ background:var(--accent2); }
+    button.sm{ padding:11px 14px; border:none; border-radius:10px; font-size:14px; font-weight:600; cursor:pointer; }
+    button.green{ background:var(--ok); color:#fff; }
+    button.ghost{ background:#fff; border:1px solid var(--line); color:var(--ink); }
+    table{ width:100%; border-collapse:collapse; font-size:13px; }
+    th,td{ text-align:left; padding:8px 9px; border-bottom:1px solid var(--line); white-space:nowrap; }
+    th{ color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase; }
+    .scroll{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .r{ text-align:right; }
+    .empty{ color:var(--muted); font-size:13px; padding:14px 2px; }
+    .toast{ position:fixed; left:50%; bottom:22px; transform:translateX(-50%); background:#111827; color:#fff; padding:11px 16px; border-radius:10px; font-size:13px; opacity:0; transition:opacity .25s; pointer-events:none; z-index:50; max-width:90%; }
+    .toast.show{ opacity:1; }
+    .toast.bad{ background:var(--bad); }
+    .secthead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+    .secthead h2{ font-size:15px; margin:0; }
+    .lapcard{ border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+    .lapname{ font-size:16px; font-weight:700; margin-bottom:8px; }
+    .totals{ margin-top:10px; font-size:14px; }
+    .totals div{ display:flex; justify-content:space-between; padding:3px 0; }
+    .sisa{ font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:6px; }
+    .sisa.merah{ color:var(--bad); }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Kelola Pinjaman</h1>
+  <p class="sub">Catatan pinjaman atas nama Haryadi &middot; database Google Sheet</p>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="pinjaman">Pinjaman</div>
+    <div class="tab" data-tab="pembayaran">Pembayaran</div>
+    <div class="tab" data-tab="laporan">Laporan</div>
+  </div>
+
+  <!-- ============ TAB 1: PINJAMAN ============ -->
+  <div class="panel active" id="panel-pinjaman">
+    <div class="card">
+      <div class="clockbar">🕒 <span class="jam">—</span></div>
+
+      <label>Nama Peminjam</label>
+      <div class="selrow">
+        <select id="p_nama"></select>
+        <button type="button" class="plus" id="add_peminjam">+</button>
+      </div>
+      <div class="addbox" id="box_peminjam">
+        <input type="text" id="new_peminjam" placeholder="Nama baru">
+        <button type="button" class="sm green" id="save_peminjam">Simpan</button>
+        <button type="button" class="sm ghost" id="cancel_peminjam">Batal</button>
+      </div>
+
+      <label>Akun yang Digunakan</label>
+      <div class="selrow">
+        <select id="p_akun"></select>
+        <button type="button" class="plus" id="add_akun">+</button>
+      </div>
+      <div class="addbox" id="box_akun">
+        <input type="text" id="new_akun" placeholder="cth: Akulaku">
+        <button type="button" class="sm green" id="save_akun">Simpan</button>
+        <button type="button" class="sm ghost" id="cancel_akun">Batal</button>
+      </div>
+
+      <label>Nominal Pinjaman</label>
+      <input type="text" id="p_nominal" inputmode="numeric" placeholder="Rp 0">
+
+      <div class="row">
+        <div>
+          <label>Tenor</label>
+          <select id="p_tenor"></select>
+        </div>
+        <div>
+          <label>Jatuh Tempo (otomatis)</label>
+          <input type="text" id="p_jt" class="ro" readonly value="—">
+        </div>
+      </div>
+
+      <label>Akun TF Peminjam</label>
+      <input type="text" id="p_akuntf" list="dl_akuntf" placeholder="cth: BCA">
+      <datalist id="dl_akuntf"></datalist>
+      <div class="hint">Bisa pilih atau ketik sendiri.</div>
+
+      <button class="primary" id="btn_simpan_pinjaman">Simpan Pinjaman</button>
+    </div>
+
+    <div class="card">
+      <div class="secthead"><h2>Daftar Pinjaman</h2><button class="sm ghost" id="reload_pinjaman">Muat ulang</button></div>
+      <div class="scroll"><table id="tbl_pinjaman"><thead>
+        <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th>Jatuh Tempo</th><th>TF ke</th></tr>
+      </thead><tbody></tbody></table></div>
+      <div class="empty" id="empty_pinjaman" style="display:none">Belum ada pinjaman.</div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 2: PEMBAYARAN ============ -->
+  <div class="panel" id="panel-pembayaran">
+    <div class="card">
+      <div class="clockbar">🕒 <span class="jam">—</span></div>
+      <label>Nama Peminjam</label>
+      <select id="b_nama"></select>
+      <label>Nominal Bayar</label>
+      <input type="text" id="b_nominal" inputmode="numeric" placeholder="Rp 0">
+      <label>Catatan (opsional)</label>
+      <input type="text" id="b_catatan" placeholder="cth: cicilan ke-1">
+      <button class="primary" id="btn_simpan_bayar">Simpan Pembayaran</button>
+    </div>
+
+    <div class="card">
+      <div class="secthead"><h2>Daftar Pembayaran</h2><button class="sm ghost" id="reload_bayar">Muat ulang</button></div>
+      <div class="scroll"><table id="tbl_bayar"><thead>
+        <tr><th>Waktu</th><th>Peminjam</th><th class="r">Nominal</th><th>Catatan</th></tr>
+      </thead><tbody></tbody></table></div>
+      <div class="empty" id="empty_bayar" style="display:none">Belum ada pembayaran.</div>
+    </div>
+  </div>
+
+  <!-- ============ TAB 3: LAPORAN ============ -->
+  <div class="panel" id="panel-laporan">
+    <div class="card">
+      <div class="clockbar">📅 <span class="jam">—</span></div>
+      <label>Pilih Peminjam</label>
+      <select id="lap_nama"></select>
+      <div class="row" style="margin-top:14px">
+        <button class="sm ghost" id="btn_tampil_lap" style="flex:1">Tampilkan</button>
+        <button class="sm green" id="btn_pdf" style="flex:1">⬇ Export PDF</button>
+      </div>
+    </div>
+    <div id="lap_hasil"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  var DATA = { peminjam: [], akun: [] };
+  var AKUNTF_DEFAULT = ['BCA','MANDIRI','BRI','BNI','BSI','CIMB Niaga','Permata','Danamon','SeaBank','DANA','OVO','GoPay','ShopeePay'];
+
+  // Promise wrapper utk google.script.run
+  function gs(fn){
+    var args = [].slice.call(arguments, 1);
+    return new Promise(function(resolve, reject){
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(function(e){ reject(e); });
+      r[fn].apply(r, args);
+    });
+  }
+
+  function toast(msg, bad){
+    var t = document.getElementById('toast');
+    t.textContent = msg; t.className = 'toast show' + (bad ? ' bad' : '');
+    setTimeout(function(){ t.className = 'toast' + (bad ? ' bad' : ''); }, 2600);
+  }
+  function rp(n){ return 'Rp ' + (Math.round(Number(n)||0)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+  function parseRp(s){ return Number(String(s).replace(/\D/g, '')) || 0; }
+
+  function bindCurrency(el){
+    el.addEventListener('input', function(){
+      var v = el.value.replace(/\D/g, '');
+      el.value = v ? 'Rp ' + v.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
+    });
+  }
+
+  function fillSelect(sel, items, placeholder, selected){
+    sel.innerHTML = '';
+    if (placeholder !== null){
+      var o = document.createElement('option'); o.value = ''; o.textContent = placeholder; sel.appendChild(o);
+    }
+    items.forEach(function(it){
+      var op = document.createElement('option'); op.value = it; op.textContent = it; sel.appendChild(op);
+    });
+    if (selected) sel.value = selected;
+  }
+
+  function fillPeminjam(selected){
+    fillSelect(document.getElementById('p_nama'), DATA.peminjam, '-- pilih --', selected);
+    fillSelect(document.getElementById('b_nama'), DATA.peminjam, '-- pilih --');
+    fillSelect(document.getElementById('lap_nama'), DATA.peminjam, 'Semua Peminjam');
+  }
+  function fillAkun(selected){
+    fillSelect(document.getElementById('p_akun'), DATA.akun, '-- pilih --', selected);
+  }
+
+  function buildTenor(){
+    var sel = document.getElementById('p_tenor');
+    sel.innerHTML = '<option value="">-- pilih --</option>';
+    for (var i = 1; i <= 12; i++){
+      var o = document.createElement('option'); o.value = i; o.textContent = i + ' bulan'; sel.appendChild(o);
+    }
+  }
+  function buildAkunTf(){
+    var dl = document.getElementById('dl_akuntf');
+    dl.innerHTML = '';
+    AKUNTF_DEFAULT.forEach(function(a){ var o = document.createElement('option'); o.value = a; dl.appendChild(o); });
+  }
+
+  function previewJatuhTempo(){
+    var tenor = parseInt(document.getElementById('p_tenor').value, 10);
+    var out = document.getElementById('p_jt');
+    if (!tenor){ out.value = '—'; return; }
+    var d = new Date();
+    var jt = new Date(d.getFullYear(), d.getMonth() + tenor, d.getDate());
+    var dd = ('0'+jt.getDate()).slice(-2), mm = ('0'+(jt.getMonth()+1)).slice(-2);
+    out.value = dd + '/' + mm + '/' + jt.getFullYear();
+  }
+
+  function startClock(){
+    function tick(){
+      var d = new Date();
+      var p = function(x){ return ('0'+x).slice(-2); };
+      var s = p(d.getDate())+'/'+p(d.getMonth()+1)+'/'+d.getFullYear()+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());
+      var els = document.getElementsByClassName('jam');
+      for (var i=0;i<els.length;i++) els[i].textContent = s;
+    }
+    tick(); setInterval(tick, 1000);
+  }
+
+  // Adder generik (peminjam / akun)
+  function setupAdder(addBtn, box, input, save, cancel, kind){
+    document.getElementById(addBtn).onclick = function(){ document.getElementById(box).style.display = 'flex'; document.getElementById(input).focus(); };
+    document.getElementById(cancel).onclick = function(){ document.getElementById(box).style.display = 'none'; document.getElementById(input).value = ''; };
+    document.getElementById(save).onclick = function(){
+      var val = document.getElementById(input).value.trim();
+      if (!val){ return; }
+      gs(kind === 'peminjam' ? 'tambahPeminjam' : 'tambahAkun', val).then(function(list){
+        if (kind === 'peminjam'){ DATA.peminjam = list; fillPeminjam(val); }
+        else { DATA.akun = list; fillAkun(val); }
+        document.getElementById(box).style.display = 'none';
+        document.getElementById(input).value = '';
+        toast('Ditambahkan: ' + val);
+      }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); });
+    };
+  }
+
+  // Tab switching
+  function initTabs(){
+    var tabs = document.getElementsByClassName('tab');
+    for (var i=0;i<tabs.length;i++){
+      tabs[i].onclick = function(){
+        var name = this.getAttribute('data-tab');
+        Array.prototype.forEach.call(document.getElementsByClassName('tab'), function(t){ t.classList.remove('active'); });
+        this.classList.add('active');
+        Array.prototype.forEach.call(document.getElementsByClassName('panel'), function(p){ p.classList.remove('active'); });
+        document.getElementById('panel-' + name).classList.add('active');
+      };
+    }
+  }
+
+  // ---- Render tabel ----
+  function renderPinjaman(rows){
+    var tb = document.querySelector('#tbl_pinjaman tbody'); tb.innerHTML = '';
+    document.getElementById('empty_pinjaman').style.display = rows.length ? 'none' : 'block';
+    rows.forEach(function(r){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td>'+r.akun+'</td><td class="r">'+rp(r.nominal)
+        +'</td><td class="r">'+r.tenor+' bln</td><td>'+r.jatuhTempo+'</td><td>'+(r.akunTf||'')+'</td>';
+      tb.appendChild(tr);
+    });
+  }
+  function renderBayar(rows){
+    var tb = document.querySelector('#tbl_bayar tbody'); tb.innerHTML = '';
+    document.getElementById('empty_bayar').style.display = rows.length ? 'none' : 'block';
+    rows.forEach(function(r){
+      var tr = document.createElement('tr');
+      tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td class="r">'+rp(r.nominal)+'</td><td>'+(r.catatan||'')+'</td>';
+      tb.appendChild(tr);
+    });
+  }
+
+  function loadPinjaman(){ return gs('getPinjaman').then(renderPinjaman); }
+  function loadBayar(){ return gs('getPembayaran').then(renderBayar); }
+
+  // ---- Submit ----
+  function submitPinjaman(){
+    var btn = document.getElementById('btn_simpan_pinjaman');
+    var payload = {
+      nama: document.getElementById('p_nama').value,
+      akun: document.getElementById('p_akun').value,
+      nominal: parseRp(document.getElementById('p_nominal').value),
+      tenor: document.getElementById('p_tenor').value,
+      akunTf: document.getElementById('p_akuntf').value.trim()
+    };
+    if (!payload.nama || !payload.akun || !payload.nominal || !payload.tenor){ toast('Lengkapi nama, akun, nominal, tenor.', true); return; }
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+    gs('simpanPinjaman', payload).then(function(res){
+      toast('Tersimpan. Jatuh tempo ' + res.jatuhTempo);
+      document.getElementById('p_nominal').value = '';
+      document.getElementById('p_tenor').value = '';
+      document.getElementById('p_akuntf').value = '';
+      previewJatuhTempo();
+      loadPinjaman();
+    }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
+      .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pinjaman'; });
+  }
+
+  function submitBayar(){
+    var btn = document.getElementById('btn_simpan_bayar');
+    var payload = {
+      nama: document.getElementById('b_nama').value,
+      nominal: parseRp(document.getElementById('b_nominal').value),
+      catatan: document.getElementById('b_catatan').value.trim()
+    };
+    if (!payload.nama || !payload.nominal){ toast('Lengkapi nama & nominal.', true); return; }
+    btn.disabled = true; btn.textContent = 'Menyimpan...';
+    gs('simpanPembayaran', payload).then(function(){
+      toast('Pembayaran tersimpan.');
+      document.getElementById('b_nominal').value = '';
+      document.getElementById('b_catatan').value = '';
+      loadBayar();
+    }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
+      .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; });
+  }
+
+  // ---- Laporan ----
+  function renderLaporan(data){
+    var box = document.getElementById('lap_hasil'); box.innerHTML = '';
+    if (!data.length){ box.innerHTML = '<div class="card empty">Belum ada data untuk ditampilkan.</div>'; return; }
+    data.forEach(function(d){
+      var rows = '';
+      d.pinjaman.forEach(function(p){
+        rows += '<tr><td>'+p.tanggal+'</td><td>'+p.akun+'</td><td class="r">'+rp(p.nominal)+'</td><td class="r">'+p.tenor+' bln</td><td>'+p.jatuhTempo+'</td></tr>';
+      });
+      var merah = d.sisa > 0 ? ' merah' : '';
+      var html = '<div class="card lapcard">'
+        + '<div class="lapname">'+d.nama+'</div>'
+        + '<div class="scroll"><table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th>Jatuh Tempo</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        + '<div class="totals">'
+        +   '<div><span>Total Pinjaman</span><span>'+rp(d.totalPinjam)+'</span></div>'
+        +   '<div><span>Total Pembayaran</span><span>'+rp(d.totalBayar)+'</span></div>'
+        +   '<div class="sisa'+merah+'"><span>Sisa Tagihan</span><span>'+rp(d.sisa)+'</span></div>'
+        + '</div></div>';
+      box.insertAdjacentHTML('beforeend', html);
+    });
+  }
+  function tampilLaporan(){
+    var nama = document.getElementById('lap_nama').value;
+    document.getElementById('lap_hasil').innerHTML = '<div class="card empty">Memuat...</div>';
+    gs('getLaporan', nama).then(renderLaporan).catch(function(e){ toast('Gagal: '+(e.message||e), true); });
+  }
+  function exportPDF(){
+    var nama = document.getElementById('lap_nama').value;
+    var btn = document.getElementById('btn_pdf'); btn.disabled = true; btn.textContent = 'Membuat...';
+    gs('exportPdf', nama).then(function(res){
+      var bin = atob(res.base64), len = bin.length, bytes = new Uint8Array(len);
+      for (var i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+      var blob = new Blob([bytes], { type: 'application/pdf' });
+      var url = URL.createObjectURL(blob);
+      var a = document.createElement('a'); a.href = url; a.download = res.filename;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+      toast('PDF dibuat.');
+    }).catch(function(e){ toast('Gagal PDF: '+(e.message||e), true); })
+      .then(function(){ btn.disabled = false; btn.textContent = '⬇ Export PDF'; });
+  }
+
+  // ---- Init ----
+  document.addEventListener('DOMContentLoaded', function(){
+    initTabs();
+    startClock();
+    buildTenor();
+    buildAkunTf();
+    bindCurrency(document.getElementById('p_nominal'));
+    bindCurrency(document.getElementById('b_nominal'));
+    document.getElementById('p_tenor').addEventListener('change', previewJatuhTempo);
+    previewJatuhTempo();
+
+    setupAdder('add_peminjam','box_peminjam','new_peminjam','save_peminjam','cancel_peminjam','peminjam');
+    setupAdder('add_akun','box_akun','new_akun','save_akun','cancel_akun','akun');
+
+    document.getElementById('btn_simpan_pinjaman').onclick = submitPinjaman;
+    document.getElementById('btn_simpan_bayar').onclick = submitBayar;
+    document.getElementById('reload_pinjaman').onclick = loadPinjaman;
+    document.getElementById('reload_bayar').onclick = loadBayar;
+    document.getElementById('btn_tampil_lap').onclick = tampilLaporan;
+    document.getElementById('btn_pdf').onclick = exportPDF;
+
+    gs('getBootstrap').then(function(d){
+      DATA = d; fillPeminjam(); fillAkun();
+      loadPinjaman(); loadBayar();
+    }).catch(function(e){ toast('Gagal load awal: '+(e.message||e), true); });
+  });
+</script>
+</body>
+</html>
