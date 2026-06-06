@@ -61,6 +61,13 @@
     .cictotal{ background:#eef2ff; border-radius:10px; padding:10px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; }
     .cictotal .label{ font-size:13px; color:var(--accent2); font-weight:600; }
     .cictotal .val{ font-size:16px; font-weight:700; color:var(--accent2); }
+    .cicrow.lunas .label, .cicrow.lunas .val{ text-decoration:line-through; color:var(--muted); }
+    .badge{ display:inline-block; font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; margin-left:6px; vertical-align:middle; text-decoration:none; }
+    .badge.ok{ background:#d1fae5; color:var(--ok); }
+    .cicsisa{ display:flex; justify-content:space-between; align-items:center; margin-top:8px; font-size:13px; }
+    .cicsisa .label{ color:var(--muted); }
+    .cicsisa .val{ font-weight:700; color:var(--bad); }
+    .cicsisa.lunas .val{ color:var(--ok); }
   </style>
 </head>
 <body>
@@ -472,23 +479,30 @@
     var groups = {}; var order = [];
     rows.forEach(function(r){
       var key = String(r.loanId);
-      if (!groups[key]){ groups[key] = { nama:r.nama, akun:r.akun, items:[], total:0 }; order.push(key); }
+      if (!groups[key]){ groups[key] = { nama:r.nama, akun:r.akun, items:[], total:0, sisa:0 }; order.push(key); }
       groups[key].items.push(r);
       groups[key].total += Number(r.nominal)||0;
+      if (!r.lunas) groups[key].sisa += Number(r.nominal)||0;
     });
     order.forEach(function(key){
       var g = groups[key];
       var list = '';
       g.items.forEach(function(it){
-        list += '<div class="cicrow">'
-          + '<span class="label">Cicilan ke-'+it.ke+' &middot; '+it.jatuhTempo+'</span>'
+        var badge = it.lunas ? '<span class="badge ok">✓ Lunas</span>' : '';
+        list += '<div class="cicrow'+(it.lunas?' lunas':'')+'">'
+          + '<span class="label">Cicilan ke-'+it.ke+' &middot; '+it.jatuhTempo+badge+'</span>'
           + '<span class="val">'+rp(it.nominal)+'</span>'
           + '</div>';
       });
+      var lunasSemua = g.sisa <= 0;
+      var sisaHtml = '<div class="cicsisa'+(lunasSemua?' lunas':'')+'">'
+        + '<span class="label">Sisa Belum Dibayar</span>'
+        + '<span class="val">'+(lunasSemua?'✓ LUNAS':rp(g.sisa))+'</span></div>';
       var html = '<div class="card ciccard">'
         + '<div class="cicname">'+g.nama+' &middot; '+g.akun+'</div>'
         + list
         + '<div class="cictotal"><span class="label">Total Pinjaman</span><span class="val">'+rp(g.total)+'</span></div>'
+        + sisaHtml
         + '</div>';
       box.insertAdjacentHTML('beforeend', html);
     });

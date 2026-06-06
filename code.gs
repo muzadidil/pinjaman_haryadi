@@ -245,10 +245,23 @@ function getPembayaran() {
 }
 
 // Jadwal cicilan. nama opsional (kosong = semua). loanId opsional (filter 1 pinjaman).
+// Tiap baris diberi flag lunas (true jika cicilan ke- itu sudah ada di Pembayaran).
 function getJadwal(nama, loanId) {
   ensureSetup_();
   nama = String(nama || '').trim();
   loanId = loanId ? Number(loanId) : 0;
+
+  // Set cicilan yang sudah dibayar: key = "loanId|ke".
+  var paid = {};
+  var bSh = getSheet_('Pembayaran', []);
+  if (bSh.getLastRow() >= 2) {
+    var bRows = bSh.getRange(2, 1, bSh.getLastRow() - 1, 8).getValues();
+    for (var b = 0; b < bRows.length; b++) {
+      var bk = Number(bRows[b][3]) || 0; // cicilan ke-
+      if (bk) paid[Number(bRows[b][2]) + '|' + bk] = true;
+    }
+  }
+
   var sh = getSheet_('Jadwal', []);
   var last = sh.getLastRow();
   if (last < 2) return [];
@@ -266,7 +279,8 @@ function getJadwal(nama, loanId) {
       ke: r[3],
       jatuhTempo: r[4] ? fmtTanggal_(new Date(r[4])) : '',
       jatuhTempoSort: r[4] ? new Date(r[4]).getTime() : 0,
-      nominal: Number(r[5]) || 0
+      nominal: Number(r[5]) || 0,
+      lunas: !!paid[Number(r[0]) + '|' + (Number(r[3]) || 0)]
     });
   }
   out.sort(function (a, b) { return a.jatuhTempoSort - b.jatuhTempoSort; });
