@@ -52,6 +52,15 @@
     .totals div{ display:flex; justify-content:space-between; padding:3px 0; }
     .sisa{ font-weight:700; border-top:1px solid var(--line); margin-top:4px; padding-top:6px; }
     .sisa.merah{ color:var(--bad); }
+    .ciccard{ border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:12px; }
+    .cicname{ font-size:16px; font-weight:700; margin-bottom:10px; }
+    .cicrow{ display:flex; justify-content:space-between; align-items:center; padding:8px 0; border-bottom:1px solid var(--line); font-size:13px; }
+    .cicrow:last-child{ border-bottom:none; }
+    .cicrow .label{ color:var(--muted); }
+    .cicrow .val{ font-weight:600; }
+    .cictotal{ background:#eef2ff; border-radius:10px; padding:10px 14px; margin-top:10px; display:flex; justify-content:space-between; align-items:center; }
+    .cictotal .label{ font-size:13px; color:var(--accent2); font-weight:600; }
+    .cictotal .val{ font-size:16px; font-weight:700; color:var(--accent2); }
   </style>
 </head>
 <body>
@@ -62,6 +71,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="pinjaman">Pinjaman</div>
     <div class="tab" data-tab="pembayaran">Pembayaran</div>
+    <div class="tab" data-tab="cicilan">Cicilan</div>
     <div class="tab" data-tab="laporan">Laporan</div>
   </div>
 
@@ -106,6 +116,10 @@
         </div>
       </div>
 
+      <label>Cicilan per Bulan (otomatis)</label>
+      <input type="text" id="p_cicilan" class="ro" readonly value="—">
+      <div class="hint">Nominal ÷ Tenor. Belum termasuk bunga.</div>
+
       <label>Akun TF Peminjam</label>
       <input type="text" id="p_akuntf" list="dl_akuntf" placeholder="cth: BCA">
       <datalist id="dl_akuntf"></datalist>
@@ -145,7 +159,18 @@
     </div>
   </div>
 
-  <!-- ============ TAB 3: LAPORAN ============ -->
+  <!-- ============ TAB 3: CICILAN ============ -->
+  <div class="panel" id="panel-cicilan">
+    <div class="card">
+      <div class="clockbar">💳 <span class="jam">—</span></div>
+      <label>Pilih Peminjam</label>
+      <select id="cic_nama"></select>
+      <button class="primary" id="btn_tampil_cicilan">Tampilkan Cicilan</button>
+    </div>
+    <div id="cic_hasil"></div>
+  </div>
+
+  <!-- ============ TAB 4: LAPORAN ============ -->
   <div class="panel" id="panel-laporan">
     <div class="card">
       <div class="clockbar">📅 <span class="jam">—</span></div>
@@ -187,6 +212,7 @@
     el.addEventListener('input', function(){
       var v = el.value.replace(/\D/g, '');
       el.value = v ? 'Rp ' + v.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
+      if (el.id === 'p_nominal') previewCicilan();
     });
   }
 
@@ -204,6 +230,7 @@
   function fillPeminjam(selected){
     fillSelect(document.getElementById('p_nama'), DATA.peminjam, '-- pilih --', selected);
     fillSelect(document.getElementById('b_nama'), DATA.peminjam, '-- pilih --');
+    fillSelect(document.getElementById('cic_nama'), DATA.peminjam, 'Semua Peminjam');
     fillSelect(document.getElementById('lap_nama'), DATA.peminjam, 'Semua Peminjam');
   }
   function fillAkun(selected){
@@ -226,11 +253,20 @@
   function previewJatuhTempo(){
     var tenor = parseInt(document.getElementById('p_tenor').value, 10);
     var out = document.getElementById('p_jt');
-    if (!tenor){ out.value = '—'; return; }
+    if (!tenor){ out.value = '—'; previewCicilan(); return; }
     var d = new Date();
     var jt = new Date(d.getFullYear(), d.getMonth() + tenor, d.getDate());
     var dd = ('0'+jt.getDate()).slice(-2), mm = ('0'+(jt.getMonth()+1)).slice(-2);
     out.value = dd + '/' + mm + '/' + jt.getFullYear();
+    previewCicilan();
+  }
+
+  function previewCicilan(){
+    var tenor = parseInt(document.getElementById('p_tenor').value, 10);
+    var nominal = parseRp(document.getElementById('p_nominal').value);
+    var out = document.getElementById('p_cicilan');
+    if (!tenor || !nominal){ out.value = '—'; return; }
+    out.value = rp(Math.ceil(nominal / tenor)) + ' / bulan';
   }
 
   function startClock(){
@@ -340,6 +376,38 @@
       .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; });
   }
 
+  // ---- Cicilan ----
+  function tampilCicilan(){
+    var nama = document.getElementById('cic_nama').value;
+    document.getElementById('cic_hasil').innerHTML = '<div class="card empty">Memuat...</div>';
+    gs('getLaporan', nama).then(renderCicilan).catch(function(e){ toast('Gagal: '+(e.message||e), true); });
+  }
+
+  function renderCicilan(data){
+    var box = document.getElementById('cic_hasil'); box.innerHTML = '';
+    if (!data.length){ box.innerHTML = '<div class="card empty">Belum ada data untuk ditampilkan.</div>'; return; }
+    data.forEach(function(d){
+      var totalCicilan = 0;
+      var rows = '';
+      d.pinjaman.forEach(function(p){
+        if (!p.tenor || !p.nominal) return;
+        var cicilan = Math.ceil(p.nominal / p.tenor);
+        totalCicilan += cicilan;
+        rows += '<div class="cicrow">'
+          + '<span class="label">'+p.akun+' ('+p.tenor+' bln, s/d '+p.jatuhTempo+')</span>'
+          + '<span class="val">'+rp(cicilan)+'/bln</span>'
+          + '</div>';
+      });
+      var html = '<div class="card ciccard">'
+        + '<div class="cicname">'+d.nama+'</div>'
+        + rows
+        + '<div class="cictotal"><span class="label">Total Cicilan / Bulan</span><span class="val">'+rp(totalCicilan)+'</span></div>'
+        + '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Sisa tagihan keseluruhan: <b>'+rp(d.sisa)+'</b></div>'
+        + '</div>';
+      box.insertAdjacentHTML('beforeend', html);
+    });
+  }
+
   // ---- Laporan ----
   function renderLaporan(data){
     var box = document.getElementById('lap_hasil'); box.innerHTML = '';
@@ -400,6 +468,7 @@
     document.getElementById('btn_simpan_bayar').onclick = submitBayar;
     document.getElementById('reload_pinjaman').onclick = loadPinjaman;
     document.getElementById('reload_bayar').onclick = loadBayar;
+    document.getElementById('btn_tampil_cicilan').onclick = tampilCicilan;
     document.getElementById('btn_tampil_lap').onclick = tampilLaporan;
     document.getElementById('btn_pdf').onclick = exportPDF;
 
