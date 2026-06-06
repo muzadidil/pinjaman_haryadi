@@ -120,6 +120,10 @@
       <input type="text" id="p_cicilan" inputmode="numeric" placeholder="Rp 0">
       <div class="hint">Isi sesuai tagihan pinjol (sudah termasuk bunga).</div>
 
+      <label>Tanggal Tagihan Pertama</label>
+      <input type="date" id="p_tgl1">
+      <div class="hint">Cicilan akan dipecah otomatis per bulan dari tanggal ini.</div>
+
       <label>Akun TF Peminjam</label>
       <input type="text" id="p_akuntf" list="dl_akuntf" placeholder="cth: BCA">
       <datalist id="dl_akuntf"></datalist>
@@ -131,7 +135,7 @@
     <div class="card">
       <div class="secthead"><h2>Daftar Pinjaman</h2><button class="sm ghost" id="reload_pinjaman">Muat ulang</button></div>
       <div class="scroll"><table id="tbl_pinjaman"><thead>
-        <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th><th>TF ke</th></tr>
+        <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Tempo Pertama</th><th>Tempo Akhir</th><th>TF ke</th></tr>
       </thead><tbody></tbody></table></div>
       <div class="empty" id="empty_pinjaman" style="display:none">Belum ada pinjaman.</div>
     </div>
@@ -143,6 +147,9 @@
       <div class="clockbar">🕒 <span class="jam">—</span></div>
       <label>Nama Peminjam</label>
       <select id="b_nama"></select>
+      <label>Pilih Pinjaman</label>
+      <select id="b_loan"><option value="">-- pilih peminjam dulu --</option></select>
+      <div class="hint">Pilih pinjaman mana yang sedang dibayar.</div>
       <label>Nominal Bayar</label>
       <input type="text" id="b_nominal" inputmode="numeric" placeholder="Rp 0">
       <label>Catatan (opsional)</label>
@@ -153,7 +160,7 @@
     <div class="card">
       <div class="secthead"><h2>Daftar Pembayaran</h2><button class="sm ghost" id="reload_bayar">Muat ulang</button></div>
       <div class="scroll"><table id="tbl_bayar"><thead>
-        <tr><th>Waktu</th><th>Peminjam</th><th class="r">Nominal</th><th>Catatan</th></tr>
+        <tr><th>Waktu</th><th>Peminjam</th><th>Pinjaman</th><th class="r">Nominal</th><th>Catatan</th></tr>
       </thead><tbody></tbody></table></div>
       <div class="empty" id="empty_bayar" style="display:none">Belum ada pembayaran.</div>
     </div>
@@ -259,6 +266,14 @@
     out.value = dd + '/' + mm + '/' + jt.getFullYear();
   }
 
+  // Default tanggal tagihan pertama = hari ini + 1 bulan (format yyyy-MM-dd utk input date)
+  function setDefaultTgl1(){
+    var d = new Date();
+    var t = new Date(d.getFullYear(), d.getMonth() + 1, d.getDate());
+    var mm = ('0'+(t.getMonth()+1)).slice(-2), dd = ('0'+t.getDate()).slice(-2);
+    document.getElementById('p_tgl1').value = t.getFullYear() + '-' + mm + '-' + dd;
+  }
+
   function startClock(){
     function tick(){
       var d = new Date();
@@ -308,7 +323,7 @@
     rows.forEach(function(r){
       var tr = document.createElement('tr');
       tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td>'+r.akun+'</td><td class="r">'+rp(r.nominal)
-        +'</td><td class="r">'+r.tenor+' bln</td><td class="r">'+(r.cicilan?rp(r.cicilan):'-')+'</td><td>'+r.jatuhTempo+'</td><td>'+(r.akunTf||'')+'</td>';
+        +'</td><td class="r">'+r.tenor+' bln</td><td class="r">'+(r.cicilan?rp(r.cicilan):'-')+'</td><td>'+r.jatuhTempo+'</td><td>'+(r.jatuhTempoAkhir||'')+'</td><td>'+(r.akunTf||'')+'</td>';
       tb.appendChild(tr);
     });
   }
@@ -317,9 +332,27 @@
     document.getElementById('empty_bayar').style.display = rows.length ? 'none' : 'block';
     rows.forEach(function(r){
       var tr = document.createElement('tr');
-      tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td class="r">'+rp(r.nominal)+'</td><td>'+(r.catatan||'')+'</td>';
+      tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td>'+(r.akun||'-')+'</td><td class="r">'+rp(r.nominal)+'</td><td>'+(r.catatan||'')+'</td>';
       tb.appendChild(tr);
     });
+  }
+
+  // Saat peminjam dipilih di tab Pembayaran, isi dropdown pinjaman miliknya.
+  var LOANS = []; // cache hasil getPinjamanByNama
+  function loadLoansForBayar(){
+    var nama = document.getElementById('b_nama').value;
+    var sel = document.getElementById('b_loan');
+    LOANS = [];
+    if (!nama){ sel.innerHTML = '<option value="">-- pilih peminjam dulu --</option>'; return; }
+    sel.innerHTML = '<option value="">Memuat...</option>';
+    gs('getPinjamanByNama', nama).then(function(list){
+      LOANS = list || [];
+      if (!LOANS.length){ sel.innerHTML = '<option value="">(belum ada pinjaman)</option>'; return; }
+      sel.innerHTML = '<option value="">-- pilih pinjaman --</option>';
+      LOANS.forEach(function(l){
+        var o = document.createElement('option'); o.value = l.loanId; o.textContent = l.label; sel.appendChild(o);
+      });
+    }).catch(function(e){ sel.innerHTML = '<option value="">(gagal memuat)</option>'; toast('Gagal: '+(e.message||e), true); });
   }
 
   function loadPinjaman(){ return gs('getPinjaman').then(renderPinjaman); }
@@ -334,6 +367,7 @@
       nominal: parseRp(document.getElementById('p_nominal').value),
       tenor: document.getElementById('p_tenor').value,
       cicilan: parseRp(document.getElementById('p_cicilan').value),
+      tglPertama: document.getElementById('p_tgl1').value,
       akunTf: document.getElementById('p_akuntf').value.trim()
     };
     if (!payload.nama || !payload.akun || !payload.nominal || !payload.tenor){ toast('Lengkapi nama, akun, nominal, tenor.', true); return; }
@@ -344,6 +378,7 @@
       document.getElementById('p_tenor').value = '';
       document.getElementById('p_cicilan').value = '';
       document.getElementById('p_akuntf').value = '';
+      setDefaultTgl1();
       previewJatuhTempo();
       loadPinjaman();
     }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
@@ -352,8 +387,13 @@
 
   function submitBayar(){
     var btn = document.getElementById('btn_simpan_bayar');
+    var loanId = document.getElementById('b_loan').value;
+    var akun = '';
+    for (var i=0;i<LOANS.length;i++){ if (String(LOANS[i].loanId) === String(loanId)){ akun = LOANS[i].akun; break; } }
     var payload = {
       nama: document.getElementById('b_nama').value,
+      loanId: loanId,
+      akun: akun,
       nominal: parseRp(document.getElementById('b_nominal').value),
       catatan: document.getElementById('b_catatan').value.trim()
     };
@@ -363,37 +403,43 @@
       toast('Pembayaran tersimpan.');
       document.getElementById('b_nominal').value = '';
       document.getElementById('b_catatan').value = '';
+      document.getElementById('b_loan').value = '';
       loadBayar();
     }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
       .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pembayaran'; });
   }
 
-  // ---- Cicilan ----
+  // ---- Cicilan (jadwal terpecah per tanggal) ----
   function tampilCicilan(){
     var nama = document.getElementById('cic_nama').value;
     document.getElementById('cic_hasil').innerHTML = '<div class="card empty">Memuat...</div>';
-    gs('getLaporan', nama).then(renderCicilan).catch(function(e){ toast('Gagal: '+(e.message||e), true); });
+    gs('getJadwal', nama, '').then(renderCicilan).catch(function(e){ toast('Gagal: '+(e.message||e), true); });
   }
 
-  function renderCicilan(data){
+  function renderCicilan(rows){
     var box = document.getElementById('cic_hasil'); box.innerHTML = '';
-    if (!data.length){ box.innerHTML = '<div class="card empty">Belum ada data untuk ditampilkan.</div>'; return; }
-    data.forEach(function(d){
-      var totalCicilan = 0;
-      var rows = '';
-      d.pinjaman.forEach(function(p){
-        var cicilan = Number(p.cicilan) || 0;
-        totalCicilan += cicilan;
-        rows += '<div class="cicrow">'
-          + '<span class="label">'+p.akun+' ('+p.tenor+' bln, s/d '+p.jatuhTempo+')</span>'
-          + '<span class="val">'+(cicilan?rp(cicilan)+'/bln':'-')+'</span>'
+    if (!rows.length){ box.innerHTML = '<div class="card empty">Belum ada jadwal cicilan.</div>'; return; }
+    // Kelompokkan per pinjaman (loanId).
+    var groups = {}; var order = [];
+    rows.forEach(function(r){
+      var key = String(r.loanId);
+      if (!groups[key]){ groups[key] = { nama:r.nama, akun:r.akun, items:[], total:0 }; order.push(key); }
+      groups[key].items.push(r);
+      groups[key].total += Number(r.nominal)||0;
+    });
+    order.forEach(function(key){
+      var g = groups[key];
+      var list = '';
+      g.items.forEach(function(it){
+        list += '<div class="cicrow">'
+          + '<span class="label">Cicilan ke-'+it.ke+' &middot; '+it.jatuhTempo+'</span>'
+          + '<span class="val">'+rp(it.nominal)+'</span>'
           + '</div>';
       });
       var html = '<div class="card ciccard">'
-        + '<div class="cicname">'+d.nama+'</div>'
-        + rows
-        + '<div class="cictotal"><span class="label">Total Cicilan / Bulan</span><span class="val">'+rp(totalCicilan)+'</span></div>'
-        + '<div style="margin-top:8px;font-size:12px;color:var(--muted)">Sisa tagihan keseluruhan: <b>'+rp(d.sisa)+'</b></div>'
+        + '<div class="cicname">'+g.nama+' &middot; '+g.akun+'</div>'
+        + list
+        + '<div class="cictotal"><span class="label">Total Pinjaman</span><span class="val">'+rp(g.total)+'</span></div>'
         + '</div>';
       box.insertAdjacentHTML('beforeend', html);
     });
@@ -452,12 +498,14 @@
     bindCurrency(document.getElementById('b_nominal'));
     document.getElementById('p_tenor').addEventListener('change', previewJatuhTempo);
     previewJatuhTempo();
+    setDefaultTgl1();
 
     setupAdder('add_peminjam','box_peminjam','new_peminjam','save_peminjam','cancel_peminjam','peminjam');
     setupAdder('add_akun','box_akun','new_akun','save_akun','cancel_akun','akun');
 
     document.getElementById('btn_simpan_pinjaman').onclick = submitPinjaman;
     document.getElementById('btn_simpan_bayar').onclick = submitBayar;
+    document.getElementById('b_nama').addEventListener('change', loadLoansForBayar);
     document.getElementById('reload_pinjaman').onclick = loadPinjaman;
     document.getElementById('reload_bayar').onclick = loadBayar;
     document.getElementById('btn_tampil_cicilan').onclick = tampilCicilan;

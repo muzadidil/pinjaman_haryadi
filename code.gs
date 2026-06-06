@@ -30,8 +30,9 @@ function getSheet_(name, headers) {
 
 // Create all sheets + seed default akun. Safe to call many times.
 function ensureSetup_() {
-  getSheet_('Pinjaman', ['ID', 'Waktu', 'Nama Peminjam', 'Akun Digunakan', 'Nominal', 'Tenor (bln)', 'Cicilan/bln', 'Jatuh Tempo', 'Akun TF']);
-  getSheet_('Pembayaran', ['ID', 'Waktu', 'Nama Peminjam', 'Nominal Bayar', 'Catatan']);
+  getSheet_('Pinjaman', ['ID', 'Waktu', 'Nama Peminjam', 'Akun Digunakan', 'Nominal', 'Tenor (bln)', 'Cicilan/bln', 'Jatuh Tempo Pertama', 'Jatuh Tempo Akhir', 'Akun TF']);
+  getSheet_('Jadwal', ['LoanID', 'Nama Peminjam', 'Akun', 'Cicilan ke-', 'Jatuh Tempo', 'Nominal Cicilan']);
+  getSheet_('Pembayaran', ['ID', 'Waktu', 'LoanID', 'Nama Peminjam', 'Akun', 'Nominal Bayar', 'Catatan']);
   getSheet_('Peminjam', ['Nama']);
   var akun = getSheet_('Akun', ['Akun']);
   if (akun.getLastRow() < 2) {
@@ -67,6 +68,14 @@ function hitungJatuhTempo_(base, tenor) {
   return new Date(base.getFullYear(), base.getMonth() + Number(tenor), base.getDate());
 }
 
+// Parse 'yyyy-MM-dd' (dari <input type=date>) -> Date lokal. Kosong/invalid -> null.
+function parseTgl_(s) {
+  s = String(s || '').trim();
+  var m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
 /* ---------- API dipanggil dari HTML ---------- */
 
 function getBootstrap() {
@@ -99,7 +108,8 @@ function tambahAkun(akun) {
   return list;
 }
 
-// p: {nama, akun, nominal, tenor, akunTf}
+// p: {nama, akun, nominal, tenor, cicilan, tglPertama, akunTf}
+// tglPertama = tanggal jatuh tempo cicilan ke-1 (yyyy-MM-dd). Default = tgl pinjam + 1 bulan.
 function simpanPinjaman(p) {
   ensureSetup_();
   var nama = String(p.nama || '').trim();
@@ -111,41 +121,92 @@ function simpanPinjaman(p) {
   if (!nama || !akun || !nominal || !tenor) throw new Error('Lengkapi: nama, akun, nominal, tenor.');
 
   var now = new Date();
-  var jt = hitungJatuhTempo_(now, tenor);
-  getSheet_('Pinjaman', []).appendRow([now.getTime(), now, nama, akun, nominal, tenor, cicilan, jt, akunTf]);
-  return { ok: true, jatuhTempo: fmtTanggal_(jt), waktu: fmtWaktu_(now) };
+  var loanId = now.getTime();
+
+  // Tanggal jatuh tempo cicilan pertama
+  var first = parseTgl_(p.tglPertama);
+  if (!first) first = hitungJatuhTempo_(now, 1); // default: 1 bulan dari sekarang
+
+  // Cicilan per bulan: pakai input manual; jika kosong, bagi rata.
+  var perBulan = cicilan > 0 ? cicilan : Math.floor(nominal / tenor);
+
+  // Generate jadwal: 1 baris per bulan. Cicilan terakhir menyerap sisa supaya total = nominal.
+  var jadwalRows = [];
+  var akumulasi = 0;
+  var jtAkhir = first;
+  for (var k = 1; k <= tenor; k++) {
+    var due = new Date(first.getFullYear(), first.getMonth() + (k - 1), first.getDate());
+    var nominalCic = (k < tenor) ? perBulan : (nominal - akumulasi); // baris terakhir = sisa
+    akumulasi += (k < tenor) ? perBulan : nominalCic;
+    jadwalRows.push([loanId, nama, akun, k, due, nominalCic]);
+    jtAkhir = due;
+  }
+  // Tulis sekaligus (batch) supaya ringan.
+  var jSh = getSheet_('Jadwal', []);
+  jSh.getRange(jSh.getLastRow() + 1, 1, jadwalRows.length, 6).setValues(jadwalRows);
+
+  getSheet_('Pinjaman', []).appendRow([loanId, now, nama, akun, nominal, tenor, perBulan, first, jtAkhir, akunTf]);
+  return { ok: true, jatuhTempo: fmtTanggal_(first), jatuhTempoAkhir: fmtTanggal_(jtAkhir), waktu: fmtWaktu_(now) };
 }
 
 function getPinjaman() {
   var sh = getSheet_('Pinjaman', []);
   var last = sh.getLastRow();
   if (last < 2) return [];
-  var rows = sh.getRange(2, 1, last - 1, 9).getValues();
+  var rows = sh.getRange(2, 1, last - 1, 10).getValues();
   var out = [];
   for (var i = rows.length - 1; i >= 0; i--) { // newest first
     var r = rows[i];
     out.push({
+      loanId: r[0],
       waktu: r[1] ? fmtWaktu_(new Date(r[1])) : '',
       nama: r[2], akun: r[3],
       nominal: Number(r[4]) || 0,
       tenor: r[5],
       cicilan: Number(r[6]) || 0,
       jatuhTempo: r[7] ? fmtTanggal_(new Date(r[7])) : '',
-      akunTf: r[8]
+      jatuhTempoAkhir: r[8] ? fmtTanggal_(new Date(r[8])) : '',
+      akunTf: r[9]
     });
   }
   return out;
 }
 
-// p: {nama, nominal, catatan}
+// Daftar pinjaman 1 peminjam, utk dropdown di tab Pembayaran.
+// Label = "dd/MM/yyyy - akun - Rp nominal". Value = loanId.
+function getPinjamanByNama(nama) {
+  nama = String(nama || '').trim();
+  if (!nama) return [];
+  var sh = getSheet_('Pinjaman', []);
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var rows = sh.getRange(2, 1, last - 1, 10).getValues();
+  var out = [];
+  for (var i = rows.length - 1; i >= 0; i--) { // newest first
+    var r = rows[i];
+    if (String(r[2]).trim() !== nama) continue;
+    var tgl = r[1] ? fmtTanggal_(new Date(r[1])) : '';
+    out.push({
+      loanId: r[0],
+      akun: r[3],
+      nominal: Number(r[4]) || 0,
+      label: tgl + ' - ' + r[3] + ' - ' + rupiah_(Number(r[4]) || 0)
+    });
+  }
+  return out;
+}
+
+// p: {nama, loanId, akun, nominal, catatan}
 function simpanPembayaran(p) {
   ensureSetup_();
   var nama = String(p.nama || '').trim();
+  var loanId = p.loanId ? Number(p.loanId) : '';
+  var akun = String(p.akun || '').trim();
   var nominal = Number(p.nominal) || 0;
   var catatan = String(p.catatan || '').trim();
   if (!nama || !nominal) throw new Error('Lengkapi: nama & nominal.');
   var now = new Date();
-  getSheet_('Pembayaran', []).appendRow([now.getTime(), now, nama, nominal, catatan]);
+  getSheet_('Pembayaran', []).appendRow([now.getTime(), now, loanId, nama, akun, nominal, catatan]);
   return { ok: true, waktu: fmtWaktu_(now) };
 }
 
@@ -153,17 +214,48 @@ function getPembayaran() {
   var sh = getSheet_('Pembayaran', []);
   var last = sh.getLastRow();
   if (last < 2) return [];
-  var rows = sh.getRange(2, 1, last - 1, 5).getValues();
+  var rows = sh.getRange(2, 1, last - 1, 7).getValues();
   var out = [];
   for (var i = rows.length - 1; i >= 0; i--) {
     var r = rows[i];
     out.push({
       waktu: r[1] ? fmtWaktu_(new Date(r[1])) : '',
-      nama: r[2],
-      nominal: Number(r[3]) || 0,
-      catatan: r[4]
+      loanId: r[2],
+      nama: r[3],
+      akun: r[4],
+      nominal: Number(r[5]) || 0,
+      catatan: r[6]
     });
   }
+  return out;
+}
+
+// Jadwal cicilan. nama opsional (kosong = semua). loanId opsional (filter 1 pinjaman).
+function getJadwal(nama, loanId) {
+  ensureSetup_();
+  nama = String(nama || '').trim();
+  loanId = loanId ? Number(loanId) : 0;
+  var sh = getSheet_('Jadwal', []);
+  var last = sh.getLastRow();
+  if (last < 2) return [];
+  var rows = sh.getRange(2, 1, last - 1, 6).getValues();
+  var out = [];
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var pn = String(r[1]).trim();
+    if (nama && pn !== nama) continue;
+    if (loanId && Number(r[0]) !== loanId) continue;
+    out.push({
+      loanId: r[0],
+      nama: pn,
+      akun: r[2],
+      ke: r[3],
+      jatuhTempo: r[4] ? fmtTanggal_(new Date(r[4])) : '',
+      jatuhTempoSort: r[4] ? new Date(r[4]).getTime() : 0,
+      nominal: Number(r[5]) || 0
+    });
+  }
+  out.sort(function (a, b) { return a.jatuhTempoSort - b.jatuhTempoSort; });
   return out;
 }
 
@@ -173,14 +265,14 @@ function getLaporan(nama) {
   nama = String(nama || '').trim();
   var pSh = getSheet_('Pinjaman', []);
   var bSh = getSheet_('Pembayaran', []);
-  var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 9).getValues();
-  var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 5).getValues();
+  var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 10).getValues();
+  var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 7).getValues();
 
   var bayarMap = {};
   for (var b = 0; b < bRows.length; b++) {
-    var bn = String(bRows[b][2]).trim();
+    var bn = String(bRows[b][3]).trim();
     if (!bn) continue;
-    bayarMap[bn] = (bayarMap[bn] || 0) + (Number(bRows[b][3]) || 0);
+    bayarMap[bn] = (bayarMap[bn] || 0) + (Number(bRows[b][5]) || 0);
   }
 
   var map = {};
