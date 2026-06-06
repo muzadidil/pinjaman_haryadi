@@ -116,9 +116,9 @@
         </div>
       </div>
 
-      <label>Cicilan per Bulan (otomatis)</label>
-      <input type="text" id="p_cicilan" class="ro" readonly value="—">
-      <div class="hint">Nominal ÷ Tenor. Belum termasuk bunga.</div>
+      <label>Cicilan per Bulan</label>
+      <input type="text" id="p_cicilan" inputmode="numeric" placeholder="Rp 0">
+      <div class="hint">Isi sesuai tagihan pinjol (sudah termasuk bunga).</div>
 
       <label>Akun TF Peminjam</label>
       <input type="text" id="p_akuntf" list="dl_akuntf" placeholder="cth: BCA">
@@ -131,7 +131,7 @@
     <div class="card">
       <div class="secthead"><h2>Daftar Pinjaman</h2><button class="sm ghost" id="reload_pinjaman">Muat ulang</button></div>
       <div class="scroll"><table id="tbl_pinjaman"><thead>
-        <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th>Jatuh Tempo</th><th>TF ke</th></tr>
+        <tr><th>Waktu</th><th>Peminjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th><th>TF ke</th></tr>
       </thead><tbody></tbody></table></div>
       <div class="empty" id="empty_pinjaman" style="display:none">Belum ada pinjaman.</div>
     </div>
@@ -212,7 +212,6 @@
     el.addEventListener('input', function(){
       var v = el.value.replace(/\D/g, '');
       el.value = v ? 'Rp ' + v.replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
-      if (el.id === 'p_nominal') previewCicilan();
     });
   }
 
@@ -253,20 +252,11 @@
   function previewJatuhTempo(){
     var tenor = parseInt(document.getElementById('p_tenor').value, 10);
     var out = document.getElementById('p_jt');
-    if (!tenor){ out.value = '—'; previewCicilan(); return; }
+    if (!tenor){ out.value = '—'; return; }
     var d = new Date();
     var jt = new Date(d.getFullYear(), d.getMonth() + tenor, d.getDate());
     var dd = ('0'+jt.getDate()).slice(-2), mm = ('0'+(jt.getMonth()+1)).slice(-2);
     out.value = dd + '/' + mm + '/' + jt.getFullYear();
-    previewCicilan();
-  }
-
-  function previewCicilan(){
-    var tenor = parseInt(document.getElementById('p_tenor').value, 10);
-    var nominal = parseRp(document.getElementById('p_nominal').value);
-    var out = document.getElementById('p_cicilan');
-    if (!tenor || !nominal){ out.value = '—'; return; }
-    out.value = rp(Math.ceil(nominal / tenor)) + ' / bulan';
   }
 
   function startClock(){
@@ -318,7 +308,7 @@
     rows.forEach(function(r){
       var tr = document.createElement('tr');
       tr.innerHTML = '<td>'+r.waktu+'</td><td>'+r.nama+'</td><td>'+r.akun+'</td><td class="r">'+rp(r.nominal)
-        +'</td><td class="r">'+r.tenor+' bln</td><td>'+r.jatuhTempo+'</td><td>'+(r.akunTf||'')+'</td>';
+        +'</td><td class="r">'+r.tenor+' bln</td><td class="r">'+(r.cicilan?rp(r.cicilan):'-')+'</td><td>'+r.jatuhTempo+'</td><td>'+(r.akunTf||'')+'</td>';
       tb.appendChild(tr);
     });
   }
@@ -343,6 +333,7 @@
       akun: document.getElementById('p_akun').value,
       nominal: parseRp(document.getElementById('p_nominal').value),
       tenor: document.getElementById('p_tenor').value,
+      cicilan: parseRp(document.getElementById('p_cicilan').value),
       akunTf: document.getElementById('p_akuntf').value.trim()
     };
     if (!payload.nama || !payload.akun || !payload.nominal || !payload.tenor){ toast('Lengkapi nama, akun, nominal, tenor.', true); return; }
@@ -351,6 +342,7 @@
       toast('Tersimpan. Jatuh tempo ' + res.jatuhTempo);
       document.getElementById('p_nominal').value = '';
       document.getElementById('p_tenor').value = '';
+      document.getElementById('p_cicilan').value = '';
       document.getElementById('p_akuntf').value = '';
       previewJatuhTempo();
       loadPinjaman();
@@ -390,12 +382,11 @@
       var totalCicilan = 0;
       var rows = '';
       d.pinjaman.forEach(function(p){
-        if (!p.tenor || !p.nominal) return;
-        var cicilan = Math.ceil(p.nominal / p.tenor);
+        var cicilan = Number(p.cicilan) || 0;
         totalCicilan += cicilan;
         rows += '<div class="cicrow">'
           + '<span class="label">'+p.akun+' ('+p.tenor+' bln, s/d '+p.jatuhTempo+')</span>'
-          + '<span class="val">'+rp(cicilan)+'/bln</span>'
+          + '<span class="val">'+(cicilan?rp(cicilan)+'/bln':'-')+'</span>'
           + '</div>';
       });
       var html = '<div class="card ciccard">'
@@ -415,12 +406,12 @@
     data.forEach(function(d){
       var rows = '';
       d.pinjaman.forEach(function(p){
-        rows += '<tr><td>'+p.tanggal+'</td><td>'+p.akun+'</td><td class="r">'+rp(p.nominal)+'</td><td class="r">'+p.tenor+' bln</td><td>'+p.jatuhTempo+'</td></tr>';
+        rows += '<tr><td>'+p.tanggal+'</td><td>'+p.akun+'</td><td class="r">'+rp(p.nominal)+'</td><td class="r">'+p.tenor+' bln</td><td class="r">'+(p.cicilan?rp(p.cicilan):'-')+'</td><td>'+p.jatuhTempo+'</td></tr>';
       });
       var merah = d.sisa > 0 ? ' merah' : '';
       var html = '<div class="card lapcard">'
         + '<div class="lapname">'+d.nama+'</div>'
-        + '<div class="scroll"><table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th>Jatuh Tempo</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
+        + '<div class="scroll"><table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
         + '<div class="totals">'
         +   '<div><span>Total Pinjaman</span><span>'+rp(d.totalPinjam)+'</span></div>'
         +   '<div><span>Total Pembayaran</span><span>'+rp(d.totalBayar)+'</span></div>'
@@ -457,6 +448,7 @@
     buildTenor();
     buildAkunTf();
     bindCurrency(document.getElementById('p_nominal'));
+    bindCurrency(document.getElementById('p_cicilan'));
     bindCurrency(document.getElementById('b_nominal'));
     document.getElementById('p_tenor').addEventListener('change', previewJatuhTempo);
     previewJatuhTempo();

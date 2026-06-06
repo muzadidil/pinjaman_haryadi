@@ -30,7 +30,7 @@ function getSheet_(name, headers) {
 
 // Create all sheets + seed default akun. Safe to call many times.
 function ensureSetup_() {
-  getSheet_('Pinjaman', ['ID', 'Waktu', 'Nama Peminjam', 'Akun Digunakan', 'Nominal', 'Tenor (bln)', 'Jatuh Tempo', 'Akun TF']);
+  getSheet_('Pinjaman', ['ID', 'Waktu', 'Nama Peminjam', 'Akun Digunakan', 'Nominal', 'Tenor (bln)', 'Cicilan/bln', 'Jatuh Tempo', 'Akun TF']);
   getSheet_('Pembayaran', ['ID', 'Waktu', 'Nama Peminjam', 'Nominal Bayar', 'Catatan']);
   getSheet_('Peminjam', ['Nama']);
   var akun = getSheet_('Akun', ['Akun']);
@@ -106,12 +106,13 @@ function simpanPinjaman(p) {
   var akun = String(p.akun || '').trim();
   var nominal = Number(p.nominal) || 0;
   var tenor = Number(p.tenor) || 0;
+  var cicilan = Number(p.cicilan) || 0;
   var akunTf = String(p.akunTf || '').trim();
   if (!nama || !akun || !nominal || !tenor) throw new Error('Lengkapi: nama, akun, nominal, tenor.');
 
   var now = new Date();
   var jt = hitungJatuhTempo_(now, tenor);
-  getSheet_('Pinjaman', []).appendRow([now.getTime(), now, nama, akun, nominal, tenor, jt, akunTf]);
+  getSheet_('Pinjaman', []).appendRow([now.getTime(), now, nama, akun, nominal, tenor, cicilan, jt, akunTf]);
   return { ok: true, jatuhTempo: fmtTanggal_(jt), waktu: fmtWaktu_(now) };
 }
 
@@ -119,7 +120,7 @@ function getPinjaman() {
   var sh = getSheet_('Pinjaman', []);
   var last = sh.getLastRow();
   if (last < 2) return [];
-  var rows = sh.getRange(2, 1, last - 1, 8).getValues();
+  var rows = sh.getRange(2, 1, last - 1, 9).getValues();
   var out = [];
   for (var i = rows.length - 1; i >= 0; i--) { // newest first
     var r = rows[i];
@@ -128,8 +129,9 @@ function getPinjaman() {
       nama: r[2], akun: r[3],
       nominal: Number(r[4]) || 0,
       tenor: r[5],
-      jatuhTempo: r[6] ? fmtTanggal_(new Date(r[6])) : '',
-      akunTf: r[7]
+      cicilan: Number(r[6]) || 0,
+      jatuhTempo: r[7] ? fmtTanggal_(new Date(r[7])) : '',
+      akunTf: r[8]
     });
   }
   return out;
@@ -171,7 +173,7 @@ function getLaporan(nama) {
   nama = String(nama || '').trim();
   var pSh = getSheet_('Pinjaman', []);
   var bSh = getSheet_('Pembayaran', []);
-  var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 8).getValues();
+  var pRows = pSh.getLastRow() < 2 ? [] : pSh.getRange(2, 1, pSh.getLastRow() - 1, 9).getValues();
   var bRows = bSh.getLastRow() < 2 ? [] : bSh.getRange(2, 1, bSh.getLastRow() - 1, 5).getValues();
 
   var bayarMap = {};
@@ -193,7 +195,8 @@ function getLaporan(nama) {
       akun: r[3],
       nominal: Number(r[4]) || 0,
       tenor: r[5],
-      jatuhTempo: r[6] ? fmtTanggal_(new Date(r[6])) : ''
+      cicilan: Number(r[6]) || 0,
+      jatuhTempo: r[7] ? fmtTanggal_(new Date(r[7])) : ''
     });
     map[pn].totalPinjam += Number(r[4]) || 0;
   }
@@ -237,11 +240,11 @@ function exportPdf(nama) {
     for (var i = 0; i < data.length; i++) {
       var d = data[i];
       html += '<h2>' + d.nama + '</h2>';
-      html += '<table><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th>Jatuh Tempo</th></tr>';
+      html += '<table><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th></tr>';
       for (var j = 0; j < d.pinjaman.length; j++) {
         var p = d.pinjaman[j];
         html += '<tr><td>' + p.tanggal + '</td><td>' + p.akun + '</td><td class="r">' + rupiah_(p.nominal)
-          + '</td><td class="r">' + p.tenor + ' bln</td><td>' + p.jatuhTempo + '</td></tr>';
+          + '</td><td class="r">' + p.tenor + ' bln</td><td class="r">' + (p.cicilan ? rupiah_(p.cicilan) : '-') + '</td><td>' + p.jatuhTempo + '</td></tr>';
       }
       html += '</table>';
       html += '<div class="sum">Total Pinjaman: ' + rupiah_(d.totalPinjam) + '</div>';
