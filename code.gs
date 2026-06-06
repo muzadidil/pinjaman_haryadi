@@ -497,6 +497,21 @@ function qrDataUri_(text) {
   }
 }
 
+// Diagnostik QR: JALANKAN MANUAL dari editor Apps Script (pilih fungsi "cekQr" lalu klik Run).
+// - Jika muncul dialog minta izin "Connect to an external service" -> IZINKAN. Itulah penyebab QR
+//   tidak muncul di PDF (izin akses internet belum diberikan akun pemilik). Setelah diizinkan, QR muncul.
+// - Jika mengembalikan "HTTP 200 ..." tanpa error, berarti pengambilan QR sudah OK.
+// Sengaja TANPA try/catch agar error izin tampil jelas.
+function cekQr() {
+  var url = 'https://quickchart.io/qr?margin=1&size=150&text=' + encodeURIComponent('TES QR');
+  var resp = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  var n = resp.getBlob().getBytes().length;
+  var hasil = 'HTTP ' + resp.getResponseCode() + ', ukuran gambar ' + n + ' byte. '
+    + (resp.getResponseCode() === 200 ? 'Izin akses internet OK — QR seharusnya bisa muncul di PDF.' : 'Layanan QR bermasalah.');
+  Logger.log(hasil);
+  return hasil;
+}
+
 // URL web app (untuk QR). Kosong kalau belum di-deploy sebagai web app.
 function webAppUrl_() {
   try { return ScriptApp.getService().getUrl() || ''; } catch (e) { return ''; }

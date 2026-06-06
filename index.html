@@ -72,7 +72,7 @@
     .lapname{ font-size:16px; font-weight:700; margin-bottom:10px; color:var(--accent3); }
     .totals{ margin-top:12px; font-size:14px; }
     .totals div{ display:flex; justify-content:space-between; padding:4px 0; }
-    .sisa{ font-weight:700; border-top:2px solid var(--line); margin-top:5px; padding-top:8px; }
+    .sisa{ font-weight:800; border-top:2px solid var(--line); margin-top:6px; padding-top:10px; font-size:16px; }
     .sisa.merah{ color:var(--bad); }
     /* Kartu cicilan ala e-statement */
     .ciccard{ border:1px solid var(--line); border-radius:14px; padding:0; margin-bottom:14px; overflow:hidden; box-shadow:var(--shadow); }
@@ -90,6 +90,7 @@
     .cicrow.lunas .label, .cicrow.lunas .val{ text-decoration:line-through; color:#9aa7b8; }
     .badge{ display:inline-block; font-size:10px; font-weight:700; padding:2px 8px; border-radius:20px; margin-left:6px; vertical-align:middle; text-decoration:none; }
     .badge.ok{ background:#d1fae5; color:var(--ok); }
+    .badge.bad{ background:#fee2e2; color:var(--bad); }
     .cicsisa{ display:flex; justify-content:space-between; align-items:center; padding:11px 16px; font-size:13px; background:#fff; }
     .cicsisa .label{ color:var(--muted); font-weight:600; }
     .cicsisa .val{ font-weight:800; color:var(--bad); }
@@ -149,24 +150,16 @@
       <label>Nominal Pinjaman</label>
       <input type="text" id="p_nominal" inputmode="numeric" placeholder="Rp 0">
 
-      <div class="row">
-        <div>
-          <label>Tenor</label>
-          <select id="p_tenor"></select>
-        </div>
-        <div>
-          <label>Jatuh Tempo (otomatis)</label>
-          <input type="text" id="p_jt" class="ro" readonly value="—">
-        </div>
-      </div>
+      <label>Tenor</label>
+      <select id="p_tenor"></select>
 
       <label>Cicilan per Bulan</label>
       <input type="text" id="p_cicilan" inputmode="numeric" placeholder="Rp 0">
       <div class="hint">Isi sesuai tagihan pinjol (sudah termasuk bunga).</div>
 
-      <label>Tanggal Tagihan Pertama</label>
+      <label>Tanggal Jatuh Tempo Pertama</label>
       <input type="date" id="p_tgl1">
-      <div class="hint">Cicilan akan dipecah otomatis per bulan dari tanggal ini.</div>
+      <div class="hint">Bisa diedit. Cicilan ke-2, ke-3, dst otomatis mengikuti (+1 bulan) dari tanggal ini.</div>
 
       <label>Akun TF Peminjam</label>
       <input type="text" id="p_akuntf" list="dl_akuntf" placeholder="cth: BCA">
@@ -308,16 +301,6 @@
     var dl = document.getElementById('dl_akuntf');
     dl.innerHTML = '';
     AKUNTF_DEFAULT.forEach(function(a){ var o = document.createElement('option'); o.value = a; dl.appendChild(o); });
-  }
-
-  function previewJatuhTempo(){
-    var tenor = parseInt(document.getElementById('p_tenor').value, 10);
-    var out = document.getElementById('p_jt');
-    if (!tenor){ out.value = '—'; return; }
-    var d = new Date();
-    var jt = new Date(d.getFullYear(), d.getMonth() + tenor, d.getDate());
-    var dd = ('0'+jt.getDate()).slice(-2), mm = ('0'+(jt.getMonth()+1)).slice(-2);
-    out.value = dd + '/' + mm + '/' + jt.getFullYear();
   }
 
   // Default tanggal tagihan pertama = hari ini + 1 bulan (format yyyy-MM-dd utk input date)
@@ -481,7 +464,6 @@
       document.getElementById('p_cicilan').value = '';
       document.getElementById('p_akuntf').value = '';
       setDefaultTgl1();
-      previewJatuhTempo();
       loadPinjaman();
     }).catch(function(e){ toast('Gagal: ' + (e.message||e), true); })
       .then(function(){ btn.disabled = false; btn.textContent = 'Simpan Pinjaman'; });
@@ -576,14 +558,16 @@
       d.pinjaman.forEach(function(p){
         rows += '<tr><td>'+p.tanggal+'</td><td>'+p.akun+'</td><td class="r">'+rp(p.nominal)+'</td><td class="r">'+p.tenor+' bln</td><td class="r">'+(p.cicilan?rp(p.cicilan):'-')+'</td><td>'+p.jatuhTempo+'</td></tr>';
       });
-      var merah = d.sisa > 0 ? ' merah' : '';
+      var lunas = d.sisa <= 0;
+      var merah = lunas ? '' : ' merah';
+      var badge = lunas ? '<span class="badge ok">✓ LUNAS</span>' : '<span class="badge bad">● BELUM LUNAS</span>';
       var html = '<div class="card lapcard">'
-        + '<div class="lapname">'+d.nama+'</div>'
+        + '<div class="lapname">'+d.nama+badge+'</div>'
         + '<div class="scroll"><table><thead><tr><th>Tgl Pinjam</th><th>Akun</th><th class="r">Nominal</th><th class="r">Tenor</th><th class="r">Cicilan/bln</th><th>Jatuh Tempo</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
         + '<div class="totals">'
         +   '<div><span>Pinjaman Pokok</span><span>'+rp(d.totalPinjam)+'</span></div>'
         +   '<div><span>Total Tagihan</span><span>'+rp(d.totalTagihan!=null?d.totalTagihan:d.totalPinjam)+'</span></div>'
-        +   '<div><span>Total Pembayaran</span><span>'+rp(d.totalBayar)+'</span></div>'
+        +   '<div><span>Sudah Dibayar</span><span>'+rp(d.totalBayar)+'</span></div>'
         +   '<div class="sisa'+merah+'"><span>Sisa Tagihan</span><span>'+rp(d.sisa)+'</span></div>'
         + '</div></div>';
       box.insertAdjacentHTML('beforeend', html);
@@ -619,8 +603,6 @@
     bindCurrency(document.getElementById('p_nominal'));
     bindCurrency(document.getElementById('p_cicilan'));
     bindCurrency(document.getElementById('b_nominal'));
-    document.getElementById('p_tenor').addEventListener('change', previewJatuhTempo);
-    previewJatuhTempo();
     setDefaultTgl1();
 
     setupAdder('add_peminjam','box_peminjam','new_peminjam','save_peminjam','cancel_peminjam','peminjam');
