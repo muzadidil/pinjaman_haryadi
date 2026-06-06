@@ -17,13 +17,25 @@ function doGet() {
 /* ---------- Helpers ---------- */
 
 // Ensure sheet exists with headers. Returns the sheet.
+// Kalau sheet sudah ada tapi baris 1 kosong (header terhapus), tulis ulang header otomatis.
 function getSheet_(name, headers) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sh = ss.getSheetByName(name);
   if (!sh) {
     sh = ss.insertSheet(name);
-    sh.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sh.setFrozenRows(1);
+    if (headers && headers.length) {
+      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sh.setFrozenRows(1);
+    }
+    return sh;
+  }
+  // Sheet sudah ada: perbaiki header bila baris 1 kosong.
+  if (headers && headers.length) {
+    var firstCell = sh.getRange(1, 1).getValue();
+    if (String(firstCell).trim() === '') {
+      sh.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sh.setFrozenRows(1);
+    }
   }
   return sh;
 }
